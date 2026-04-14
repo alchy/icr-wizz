@@ -98,7 +98,7 @@ app.add_middleware(
 loader   = BankLoader()
 _spline_smoothing = _app_config.get("spline_smoothing", 1.0)
 fitter   = RelationFitter(plugins=[
-    BCurveFitter(),
+    BCurveFitter(spline_smoothing=_spline_smoothing),
     DampingLawFitter(spline_smoothing=_spline_smoothing),
     SpectralShapeFitter(),
     VelocityModelFitter(),

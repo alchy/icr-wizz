@@ -130,9 +130,13 @@ class BCurveFitter(FitPlugin):
 
     _log = get_logger(__name__, cls="BCurveFitter")
 
-    def __init__(self, break_midi: Optional[int] = None, sigma_threshold: float = 2.5):
-        self.break_midi      = break_midi
-        self.sigma_threshold = sigma_threshold
+    def __init__(self, break_midi: Optional[int] = None, sigma_threshold: float = 2.5,
+                 spline_smoothing: float = 1.0):
+        self.break_midi       = break_midi
+        self.sigma_threshold  = sigma_threshold
+        self.spline_smoothing = spline_smoothing
+        self._spl_bass = None
+        self._spl_treble = None
 
     @property
     def name(self) -> str:
@@ -166,23 +170,47 @@ class BCurveFitter(FitPlugin):
             mask_bass = log_f0 < lbk
             mask_tre  = ~mask_bass
 
-            if mask_bass.sum() < 2 or mask_tre.sum() < 2:
-                op.warn("segment < 2 body", bass=int(mask_bass.sum()),
+            if mask_bass.sum() < 4 or mask_tre.sum() < 4:
+                op.warn("segment < 4 body", bass=int(mask_bass.sum()),
                         treble=int(mask_tre.sum()))
                 return {"b_curve": None, "outlier_scores_b": {}}
 
-            a_b, b_b = self._weighted_linear_fit(
-                log_f0[mask_bass], log_B[mask_bass], w_arr[mask_bass])
-            a_t, b_t = self._weighted_linear_fit(
-                log_f0[mask_tre],  log_B[mask_tre],  w_arr[mask_tre])
+            # Spline fit per segment (v log-log prostoru)
+            from scipy.interpolate import UnivariateSpline
 
-            op.progress("segmenty nafitovány",
-                        alpha_bass=round(a_b, 3), alpha_treble=round(a_t, 3))
+            s_bass = max(4, int(mask_bass.sum() * self.spline_smoothing))
+            s_tre  = max(4, int(mask_tre.sum() * self.spline_smoothing))
+
+            try:
+                self._spl_bass = UnivariateSpline(
+                    log_f0[mask_bass], log_B[mask_bass],
+                    w=w_arr[mask_bass], s=s_bass, k=3)
+                self._spl_treble = UnivariateSpline(
+                    log_f0[mask_tre], log_B[mask_tre],
+                    w=w_arr[mask_tre], s=s_tre, k=3)
+            except Exception as e:
+                op.warn("spline fit selhal, fallback na lineární", error=str(e))
+                a_b, b_b = self._weighted_linear_fit(
+                    log_f0[mask_bass], log_B[mask_bass], w_arr[mask_bass])
+                a_t, b_t = self._weighted_linear_fit(
+                    log_f0[mask_tre], log_B[mask_tre], w_arr[mask_tre])
+                self._spl_bass = None
+                self._spl_treble = None
+
+            op.progress("segmenty nafitovány (spline)",
+                        bass_pts=int(mask_bass.sum()),
+                        treble_pts=int(mask_tre.sum()))
 
             # Residuály a outlier skóre
-            predicted = np.where(mask_bass,
-                                  a_b * log_f0 + b_b,
-                                  a_t * log_f0 + b_t)
+            if self._spl_bass is not None:
+                predicted = np.where(mask_bass,
+                                      self._spl_bass(log_f0),
+                                      self._spl_treble(log_f0))
+            else:
+                predicted = np.where(mask_bass,
+                                      a_b * log_f0 + b_b,
+                                      a_t * log_f0 + b_t)
+
             residuals_arr = log_B - predicted
             med, sigma = mad_sigma(residuals_arr)
             z_scores   = np.abs(residuals_arr - med) / sigma
@@ -193,7 +221,6 @@ class BCurveFitter(FitPlugin):
                 op.warn("B outliery", count=len(outlier_midis),
                         midis=outlier_midis[:6])
 
-            # Klíče pro outlier_scores: "m{midi:03d}"
             outlier_scores = {
                 f"m{midis[i]:03d}": float(
                     min(z_scores[i] / (self.sigma_threshold * 2), 1.0)
@@ -203,9 +230,15 @@ class BCurveFitter(FitPlugin):
             residuals_dict = {midis[i]: float(residuals_arr[i])
                               for i in range(len(midis))}
 
-            op.set_output({"alpha_bass": round(a_b, 3),
-                           "alpha_treble": round(a_t, 3),
-                           "outliers": len(outlier_midis)})
+            # Lineární approximace pro BCurveParams (zpětná kompatibilita)
+            a_b, b_b = self._weighted_linear_fit(
+                log_f0[mask_bass], log_B[mask_bass], w_arr[mask_bass])
+            a_t, b_t = self._weighted_linear_fit(
+                log_f0[mask_tre], log_B[mask_tre], w_arr[mask_tre])
+
+            op.set_output({"break_midi": break_midi,
+                           "outliers": len(outlier_midis),
+                           "spline": self._spl_bass is not None})
 
             return {
                 "b_curve": BCurveParams(
@@ -218,12 +251,17 @@ class BCurveFitter(FitPlugin):
             }
 
     def predict_B(self, params: BCurveParams, midi: int) -> float:
-        """Predikuje B pro MIDI notu z fitted BCurveParams."""
+        """Predikuje B pro MIDI notu — spline pokud dostupný, jinak lineární."""
         lf0 = math.log10(midi_to_f0(midi))
         lbk = math.log10(midi_to_f0(params.break_midi))
         if lf0 < lbk:
+            if self._spl_bass is not None:
+                return 10 ** float(self._spl_bass(lf0))
             return 10 ** (params.alpha_bass * lf0 + params.beta_bass)
-        return 10 ** (params.alpha_treble * lf0 + params.beta_treble)
+        else:
+            if self._spl_treble is not None:
+                return 10 ** float(self._spl_treble(lf0))
+            return 10 ** (params.alpha_treble * lf0 + params.beta_treble)
 
     def _collect_points(
         self, bank: BankState, weights: dict[str, float]

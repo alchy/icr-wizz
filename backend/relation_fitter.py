@@ -506,15 +506,15 @@ class DampingLawFitter(FitPlugin):
         weights: dict[str, float],
         midi_groups: dict[int, list[NoteParams]],
         op: OperationLogger,
-    ) -> dict[str, float]:
+    ) -> tuple[dict[str, float], dict[str, float]]:
         """
-        Per-parciál k: fittuj 1/τ1(midi) jako spline přes klávesnici.
-        Anchor váhy ovlivňují spline — přitahuje se k dobrým notám.
-        Vrátí {midi_prefix: mean_residual} pro outlier scoring.
+        Per-parciál k: fittuj 1/τ1(midi, vel) jako 2D spline.
+        Osa X = MIDI, osa Y = velocity. Anchor váhy ovlivňují fit.
+        Vrátí (outlier_residuals, spline_predictions).
+        Predictions klíč: "k{k}_m{midi:03d}_v{vel}" → predicted 1/tau1.
         """
         from scipy.interpolate import UnivariateSpline
 
-        # Sbírej data: per k → [(midi, 1/tau1_median, weight)]
         k_max = max(
             (p.k for n in bank.notes.values() for p in n.partials),
             default=0,
@@ -523,57 +523,78 @@ class DampingLawFitter(FitPlugin):
         if k_max < 2:
             return {}, spline_predictions
 
-        # Per k: sbírej (midi, inv_tau1_median) přes velocity mediány
-        per_k_data: dict[int, list[tuple[int, float, float]]] = {}
-        for midi in sorted(midi_groups.keys()):
-            notes = midi_groups[midi]
-            w = weights.get(f"m{midi:03d}_vel4", 1.0)
-            k_taus: dict[int, list[float]] = {}
-            for n in notes:
-                for p in n.partials:
-                    if p.fit_quality >= self.min_quality and p.tau1 > 0:
-                        k_taus.setdefault(p.k, []).append(p.tau1)
-            for k, taus in k_taus.items():
-                med = float(np.median(taus))
-                if med > 0:
-                    per_k_data.setdefault(k, []).append(
-                        (midi, 1.0 / med, w)
+        # Per k: sbírej (midi, vel, inv_tau1, weight) — per nota, ne mediánované
+        per_k_data: dict[int, list[tuple[int, int, float, float]]] = {}
+        for note in bank.notes.values():
+            w = weights.get(note.note_key, weights.get(f"m{note.midi:03d}_vel4", 1.0))
+            for p in note.partials:
+                if p.fit_quality >= self.min_quality and p.tau1 > 0:
+                    per_k_data.setdefault(p.k, []).append(
+                        (note.midi, note.vel, 1.0 / p.tau1, w)
                     )
 
-        # Fittuj spline per k a sbírej residuály per midi
-        midi_residuals: dict[str, list[float]] = {}  # "m060" → [res_k1, res_k2, ...]
+        # Per k: fittuj 1D spline per velocity vrstvu
+        # (2D RectBivariateSpline potřebuje grid — naše data nejsou grid)
+        # Alternativa: per-vel 1D spline přes MIDI osu
+        midi_residuals: dict[str, list[float]] = {}
 
         for k in range(1, min(k_max + 1, 61)):
             data = per_k_data.get(k)
             if not data or len(data) < 6:
                 continue
 
-            midis_arr = np.array([d[0] for d in data], dtype=float)
-            inv_tau   = np.array([d[1] for d in data])
-            w_arr     = np.array([d[2] for d in data])
+            # Seskup per velocity
+            per_vel: dict[int, list[tuple[int, float, float]]] = {}
+            for midi, vel, inv_tau, w in data:
+                per_vel.setdefault(vel, []).append((midi, inv_tau, w))
 
-            # Spline s anchor váhami — vyšší smoothing pro robustnost
-            try:
-                s_val = len(data) * self.spline_smoothing
-                spl = UnivariateSpline(midis_arr, inv_tau, w=w_arr,
-                                       s=s_val, k=3)
-                predicted = spl(midis_arr)
-                res = np.abs(inv_tau - predicted) / np.maximum(np.abs(inv_tau), 1e-9)
+            for vel, vel_data in per_vel.items():
+                if len(vel_data) < 4:
+                    continue
 
-                for i, (midi, _, _) in enumerate(data):
-                    pfx = f"m{midi:03d}"
-                    midi_residuals.setdefault(pfx, []).append(float(res[i]))
-                    # Ulož spline predikci pro CorrectionEngine
-                    spline_predictions[f"k{k}_m{midi:03d}"] = float(predicted[i])
-            except Exception:
-                continue
+                # Seřaď per MIDI
+                vel_data.sort(key=lambda x: x[0])
+                midis_arr = np.array([d[0] for d in vel_data], dtype=float)
+                inv_tau   = np.array([d[1] for d in vel_data])
+                w_arr     = np.array([d[2] for d in vel_data])
+
+                # Deduplikace MIDI (UnivariateSpline vyžaduje unikátní x)
+                if len(set(midis_arr)) < len(midis_arr):
+                    unique_midis = sorted(set(midis_arr))
+                    new_inv = []
+                    new_w = []
+                    for m in unique_midis:
+                        mask = midis_arr == m
+                        new_inv.append(float(np.mean(inv_tau[mask])))
+                        new_w.append(float(np.max(w_arr[mask])))
+                    midis_arr = np.array(unique_midis)
+                    inv_tau = np.array(new_inv)
+                    w_arr = np.array(new_w)
+
+                if len(midis_arr) < 4:
+                    continue
+
+                try:
+                    s_val = len(midis_arr) * self.spline_smoothing
+                    spl = UnivariateSpline(midis_arr, inv_tau, w=w_arr,
+                                           s=s_val, k=3)
+                    predicted = spl(midis_arr)
+                    res = np.abs(inv_tau - predicted) / np.maximum(np.abs(inv_tau), 1e-9)
+
+                    for i, midi in enumerate(midis_arr):
+                        midi_int = int(midi)
+                        pfx = f"m{midi_int:03d}"
+                        midi_residuals.setdefault(pfx, []).append(float(res[i]))
+                        spline_predictions[f"k{k}_m{midi_int:03d}_v{vel}"] = float(predicted[i])
+                except Exception:
+                    continue
 
         # Agreguj residuály per midi → mean
         result: dict[str, float] = {}
         for pfx, res_list in midi_residuals.items():
             result[pfx] = float(np.mean(res_list))
 
-        op.progress("cross-keyboard splines",
+        op.progress("cross-keyboard splines (per-vel)",
                     fitted_k=len(per_k_data), notes=len(result),
                     predictions=len(spline_predictions))
         return result, spline_predictions

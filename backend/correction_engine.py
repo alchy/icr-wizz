@@ -81,14 +81,17 @@ class CorrectionEngine:
         min_delta_pct: float = MIN_DELTA_PCT,
         note_workers: int = _NOTE_WORKERS,
         correction_weights: Optional[dict[str, float]] = None,
+        tau_spline_threshold: float = 0.20,
     ):
-        self.outlier_threshold = outlier_threshold
-        self.min_delta_pct     = min_delta_pct
-        self.note_workers      = note_workers
+        self.outlier_threshold    = outlier_threshold
+        self.min_delta_pct        = min_delta_pct
+        self.note_workers         = note_workers
+        self.tau_spline_threshold = tau_spline_threshold
         self.weights = {**self.DEFAULT_WEIGHTS, **(correction_weights or {})}
         self._log.debug(
             f"inicializován  outlier_threshold={outlier_threshold}  "
             f"min_delta_pct={min_delta_pct}  note_workers={note_workers}  "
+            f"tau_spline_threshold={tau_spline_threshold}  "
             f"weights={self.weights}"
         )
 
@@ -177,8 +180,8 @@ class CorrectionEngine:
                     except Exception as e:
                         op.warn("nota selhala", key=key, error=str(e))
 
-            # Fáze 2: spline tau korekce pro noty s vysokým damping residuálem
-            # (ne jen globální outliery — detailnější per-nota threshold)
+            # Fáze 2: spline tau korekce pro VŠECHNY noty
+            # Per-parciál: korekce jen kde |orig - spline_pred| / spline_pred > threshold
             if fit.damping_spline:
                 processed_midis = set()
                 for f in futs:
@@ -186,22 +189,10 @@ class CorrectionEngine:
                     m = re.match(r"m(\d+)", key)
                     if m: processed_midis.add(int(m.group(1)))
 
-                # Spline residuály per midi — z damping_residuals
-                damping_res = {}
-                for key, res in fit.damping.items():
-                    if isinstance(key, int):
-                        vals = [v for v in res.residuals.values() if v > 0.1]
-                        if vals:
-                            damping_res[key] = max(vals)
-
                 tau_extra = 0
                 for note in bank.notes.values():
                     if note.midi in processed_midis:
-                        continue
-                    # Korekce jen pro noty s per-nota damping residuálem nad prahem
-                    midi_res = damping_res.get(note.midi, 0)
-                    if midi_res < 0.3:  # pod prahem — nota je OK
-                        continue
+                        continue  # outlier nota — už zpracována v Fázi 1
                     tau_corrs = self._propose_tau_corrections(note, fit)
                     all_corrections.extend(tau_corrs)
                     tau_extra += len(tau_corrs)
@@ -420,22 +411,22 @@ class CorrectionEngine:
             if p.fit_quality < 0.5:
                 continue
 
-            # Spline predikce (preferovaná)
-            spline_key = f"k{p.k}_m{note.midi:03d}"
+            # Spline predikce (preferovaná) — per velocity
+            spline_key = f"k{p.k}_m{note.midi:03d}_v{note.vel}"
             inv_tau_pred = fit.damping_spline.get(spline_key)
 
             if inv_tau_pred is not None and inv_tau_pred > 1e-9:
                 tau1_pred = 1.0 / inv_tau_pred
             elif params is not None:
-                # Fallback: lineární damping law
                 denom = params.R + params.eta * p.f_hz * p.f_hz
                 tau1_pred = 1.0 / max(denom, 1e-9)
             else:
                 continue
 
-            delta_frac = abs(tau1_pred - p.tau1) / max(p.tau1, 1e-9)
-            if delta_frac * 100 < self.min_delta_pct:
-                continue
+            # Per-parciál residuál: |orig - pred| / pred
+            delta_frac = abs(tau1_pred - p.tau1) / max(tau1_pred, 1e-9)
+            if delta_frac < self.tau_spline_threshold:
+                continue  # pod prahem — nota je OK pro tento parciál
 
             corrections.append(Correction(
                 midi=note.midi, vel=note.vel,

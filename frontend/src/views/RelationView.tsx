@@ -13,12 +13,12 @@ import type { Correction } from '../types'
 
 const PLOTLY_LAYOUT_BASE = {
   paper_bgcolor: 'transparent',
-  plot_bgcolor:  '#3A3C40',
+  plot_bgcolor:  '#2A2D30',
   font:          { family: 'IBM Plex Mono', size: 10, color: '#9B9892' },
   margin:        { l: 46, r: 12, t: 28, b: 36 },
   showlegend:    false,
-  xaxis: { gridcolor: '#555758', zerolinecolor: '#555758' },
-  yaxis: { gridcolor: '#555758', zerolinecolor: '#555758' },
+  xaxis: { gridcolor: '#3E4044', zerolinecolor: '#3E4044' },
+  yaxis: { gridcolor: '#3E4044', zerolinecolor: '#3E4044' },
 }
 
 // Correction overlay barvy — konzistentní přes celé UI

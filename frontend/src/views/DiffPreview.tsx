@@ -80,12 +80,12 @@ export const DiffPreview: React.FC = () => {
     }]
     const layout: Partial<Plotly.Layout> = {
       paper_bgcolor: 'transparent',
-      plot_bgcolor:  '#3A3C40',
+      plot_bgcolor:  '#2A2D30',
       font: { family: 'IBM Plex Mono', size: 10, color: '#9B9892' },
       margin: { l: 40, r: 8, t: 16, b: 30 },
       height: 90,
-      xaxis: { title: { text: 'delta %', font: { size: 9 } }, gridcolor: '#555758' },
-      yaxis: { title: { text: 'N', font: { size: 9 } }, gridcolor: '#555758' },
+      xaxis: { title: { text: 'delta %', font: { size: 9 } }, gridcolor: '#3E4044' },
+      yaxis: { title: { text: 'N', font: { size: 9 } }, gridcolor: '#3E4044' },
       shapes: [
         { type: 'line', x0: 5,  x1: 5,  y0: 0, y1: 1, yref: 'paper', line: { color: 'var(--c-anchor)', width: 1, dash: 'dot' } },
         { type: 'line', x0: 20, x1: 20, y0: 0, y1: 1, yref: 'paper', line: { color: 'var(--c-outlier)', width: 1, dash: 'dot' } },

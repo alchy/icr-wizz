@@ -2,7 +2,7 @@
   "name": "anchor-0414",
   "description": null,
   "created": "2026-04-14T14:30:17.099Z",
-  "modified": "2026-04-14T16:02:47.369787",
+  "modified": "2026-04-14T16:37:23.577704",
   "instrument_hint": null,
   "entries": [
     {
@@ -28,6 +28,13 @@
     },
     {
       "midi": 28,
+      "vel": 5,
+      "score": 9.0,
+      "note": null,
+      "timestamp": "2026-04-14T16:06:29.271740"
+    },
+    {
+      "midi": 28,
       "vel": 7,
       "score": 9.0,
       "note": null,
@@ -39,6 +46,13 @@
       "score": 4.0,
       "note": null,
       "timestamp": "2026-04-14T15:58:52.940661"
+    },
+    {
+      "midi": 30,
+      "vel": 3,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T16:37:23.569225"
     },
     {
       "midi": 30,
@@ -83,18 +97,18 @@
       "timestamp": "2026-04-14T15:49:42.470175"
     },
     {
+      "midi": 47,
+      "vel": 5,
+      "score": 9.0,
+      "note": null,
+      "timestamp": "2026-04-14T16:06:40.539426"
+    },
+    {
       "midi": 52,
       "vel": 4,
       "score": 8.0,
       "note": null,
       "timestamp": "2026-04-14T15:49:49.235733"
-    },
-    {
-      "midi": 59,
-      "vel": 4,
-      "score": 6.0,
-      "note": null,
-      "timestamp": "2026-04-14T15:51:52.818719"
     },
     {
       "midi": 64,
@@ -130,6 +144,13 @@
       "score": 5.0,
       "note": null,
       "timestamp": "2026-04-14T15:56:18.117427"
+    },
+    {
+      "midi": 83,
+      "vel": 5,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T16:07:12.577774"
     },
     {
       "midi": 85,

@@ -45,7 +45,7 @@ export const DiffPreview: React.FC = () => {
 
   const [filterSource, setFilterSource] = useState<string>('all')
   const [minDelta, setMinDelta]          = useState(0)
-  const [diffOnly, setDiffOnly]          = useState(true)
+  const [diffOnly, setDiffOnly]          = useState(false)
   const [addMeta, setAddMeta]            = useState(true)
   const [applying, setApplying]          = useState(false)
   const [exportedPath, setExportedPath]  = useState<string | null>(null)

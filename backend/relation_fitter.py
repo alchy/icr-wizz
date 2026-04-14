@@ -402,8 +402,18 @@ class DampingLawFitter(FitPlugin):
                         except Exception as e:
                             op.warn("nota selhal", midi=midi, error=str(e))
 
+            # Cross-keyboard spline per parciál k
+            # Pro každý k: fittuj 1/τ1(midi) jako spline s anchor váhami
+            # → outlier score per nota založený na odchylce od spline
+            outlier_scores_damping: dict[str, float] = {}
+            spline_residuals = self._fit_cross_keyboard_splines(
+                bank, weights, midi_groups, op
+            )
+            for pfx, res in spline_residuals.items():
+                outlier_scores_damping[pfx] = min(res / (self.sigma_threshold * 2), 1.0)
+
             outlier_count = sum(
-                1 for v in residuals.values() if v > self.sigma_threshold
+                1 for v in outlier_scores_damping.values() if v > 0.5
             )
             op.set_output({
                 "fitted": len(damping),
@@ -412,7 +422,7 @@ class DampingLawFitter(FitPlugin):
             return {
                 "damping":                damping,
                 "damping_residuals":      residuals,
-                # outlier_scores budou agregovány v RelationFitter
+                "outlier_scores_damping": outlier_scores_damping,
             }
 
     def predict_tau(self, params: DampingParams, f_hz: float) -> float:
@@ -486,6 +496,80 @@ class DampingLawFitter(FitPlugin):
                 residuals_dict[f"m{midi:03d}_k{k}"] = res
 
         return DampingParams(R=R, eta=eta, residuals=residuals_dict), residuals_dict
+
+    def _fit_cross_keyboard_splines(
+        self,
+        bank: BankState,
+        weights: dict[str, float],
+        midi_groups: dict[int, list[NoteParams]],
+        op: OperationLogger,
+    ) -> dict[str, float]:
+        """
+        Per-parciál k: fittuj 1/τ1(midi) jako spline přes klávesnici.
+        Anchor váhy ovlivňují spline — přitahuje se k dobrým notám.
+        Vrátí {midi_prefix: mean_residual} pro outlier scoring.
+        """
+        from scipy.interpolate import UnivariateSpline
+
+        # Sbírej data: per k → [(midi, 1/tau1_median, weight)]
+        k_max = max(
+            (p.k for n in bank.notes.values() for p in n.partials),
+            default=0,
+        )
+        if k_max < 2:
+            return {}
+
+        # Per k: sbírej (midi, inv_tau1_median) přes velocity mediány
+        per_k_data: dict[int, list[tuple[int, float, float]]] = {}
+        for midi in sorted(midi_groups.keys()):
+            notes = midi_groups[midi]
+            w = weights.get(f"m{midi:03d}_vel4", 1.0)
+            k_taus: dict[int, list[float]] = {}
+            for n in notes:
+                for p in n.partials:
+                    if p.fit_quality >= self.min_quality and p.tau1 > 0:
+                        k_taus.setdefault(p.k, []).append(p.tau1)
+            for k, taus in k_taus.items():
+                med = float(np.median(taus))
+                if med > 0:
+                    per_k_data.setdefault(k, []).append(
+                        (midi, 1.0 / med, w)
+                    )
+
+        # Fittuj spline per k a sbírej residuály per midi
+        midi_residuals: dict[str, list[float]] = {}  # "m060" → [res_k1, res_k2, ...]
+
+        for k in range(1, min(k_max + 1, 61)):
+            data = per_k_data.get(k)
+            if not data or len(data) < 6:
+                continue
+
+            midis_arr = np.array([d[0] for d in data], dtype=float)
+            inv_tau   = np.array([d[1] for d in data])
+            w_arr     = np.array([d[2] for d in data])
+
+            # Spline s anchor váhami — vyšší smoothing pro robustnost
+            try:
+                # s = None → automatic smoothing, w = anchor váhy
+                # s = len(data) → standardní smoothing, w = anchor váhy
+                spl = UnivariateSpline(midis_arr, inv_tau, w=w_arr,
+                                       s=len(data), k=3)
+                predicted = spl(midis_arr)
+                res = np.abs(inv_tau - predicted) / np.maximum(np.abs(inv_tau), 1e-9)
+
+                for i, (midi, _, _) in enumerate(data):
+                    pfx = f"m{midi:03d}"
+                    midi_residuals.setdefault(pfx, []).append(float(res[i]))
+            except Exception:
+                continue
+
+        # Agreguj residuály per midi → mean
+        result: dict[str, float] = {}
+        for pfx, res_list in midi_residuals.items():
+            result[pfx] = float(np.mean(res_list))
+
+        op.progress("cross-keyboard splines", fitted_k=len(per_k_data), notes=len(result))
+        return result
 
 
 # ---------------------------------------------------------------------------

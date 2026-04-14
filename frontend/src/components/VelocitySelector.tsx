@@ -64,12 +64,11 @@ export const VelocitySelector: React.FC = () => {
               <button
                 key={vel}
                 onClick={() => {
-                  // MIDI note first — minimální latence
+                  setVelocity(vel)
                   if (selectedMidi !== null) {
                     const midiVel = Math.round(1 + (vel / 7) * 126)
                     midiApi.play(selectedMidi, midiVel).catch(() => {})
                   }
-                  setVelocity(vel)
                 }}
                 title={`${VEL_LABELS[vel]} (vel ${vel})`}
                 style={{

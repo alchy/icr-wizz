@@ -194,10 +194,9 @@ export const KeyboardMap: React.FC = () => {
         if (event.shiftKey) {
           openDialog(midi)
         } else {
-          // MIDI note first — minimální latence
+          selectNote(midi)
           const midiVel = Math.round(1 + (selectedVel / 7) * 126)
           midiApi.play(midi, midiVel).catch(() => {})
-          selectNote(midi)
         }
       })
       .on('mouseover', function(event: MouseEvent) {

@@ -130,6 +130,12 @@ export const correctionsApi = {
   propose: (bankPath: string, fitResult: object) =>
     post<CorrectionSet>('/corrections/propose', fitResult, { bank_path: bankPath }),
 
+  tension: (bankPath: string, anchorDbName?: string, tension = 0.5, falloff = 12.0) =>
+    post<CorrectionSet>('/corrections/tension', {
+      bank_path: bankPath, anchor_db_name: anchorDbName,
+      tension, falloff, min_delta_pct: 1.0, max_delta_pct: 200.0,
+    }),
+
   apply: (bankPath: string, correctionSet: CorrectionSet, selectedFields?: string[]) =>
     post<{ output_path: string; corrections_applied: number; notes_affected: number }>(
       '/corrections/apply',

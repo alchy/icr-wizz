@@ -589,17 +589,24 @@ class CorrectionEngine:
         # Parciální korekce: {k: {field: value}}
         partial_updates: dict[int, dict] = {}
 
+        # Parametry které musí být >= 0
+        NON_NEGATIVE = {"B", "rms_gain", "attack_tau", "A_noise",
+                        "A0", "tau1", "tau2", "a1", "beat_hz",
+                        "noise_centroid_hz"}
+
         for c in corrections:
             field_type, k = CorrectionEngine._parse_field_name(c.field)
+            val = c.corrected
+            # Sanitizace: clamp záporných hodnot
+            if field_type in NON_NEGATIVE and val < 0:
+                val = 0.0
 
             if k is None:
-                # Skalární pole: B, attack_tau, rms_gain, ...
-                scalar_updates[field_type] = c.corrected
+                scalar_updates[field_type] = val
             else:
-                # Per-parciál: tau1_k3 → k=3, field_type="tau1"
                 if k not in partial_updates:
                     partial_updates[k] = {}
-                partial_updates[k][field_type] = c.corrected
+                partial_updates[k][field_type] = val
 
         # Aplikuj parciální korekce
         if partial_updates:

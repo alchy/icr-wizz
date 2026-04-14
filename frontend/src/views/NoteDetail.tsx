@@ -26,12 +26,12 @@ function velColor(vel: number, alpha: number): string {
 
 const LAYOUT_BASE: Partial<Plotly.Layout> = {
   paper_bgcolor: 'transparent',
-  plot_bgcolor:  '#141618',
+  plot_bgcolor:  '#3A3C40',
   font:          { family: 'IBM Plex Mono', size: 10, color: '#9B9892' },
   margin:        { l: 48, r: 12, t: 28, b: 36 },
   showlegend:    false,
-  xaxis: { gridcolor: '#2A2D35', zerolinecolor: '#2A2D35' },
-  yaxis: { gridcolor: '#2A2D35', zerolinecolor: '#2A2D35' },
+  xaxis: { gridcolor: '#555758', zerolinecolor: '#555758' },
+  yaxis: { gridcolor: '#555758', zerolinecolor: '#555758' },
 }
 
 // ---------------------------------------------------------------------------

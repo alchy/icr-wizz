@@ -15,13 +15,13 @@
   --c-sel:         #378ADD40; /* blue tint — vybraná nota */
   --c-sel-solid:   #378ADD;
 
-  /* --- Pozadí — vrstvené tmavé --- */
-  --bg-base:       #0E0F11;   /* nejhlubší vrstva */
-  --bg-panel:      #141618;   /* panely */
-  --bg-card:       #1A1C20;   /* karty, grafy */
-  --bg-hover:      #22252B;   /* hover state */
-  --bg-border:     #2A2D35;   /* borders */
-  --bg-input:      #1E2026;
+  /* --- Pozadí — neutrálně šedé --- */
+  --bg-base:       #2A2C30;   /* nejhlubší vrstva */
+  --bg-panel:      #333538;   /* panely */
+  --bg-card:       #3A3C40;   /* karty, grafy */
+  --bg-hover:      #444648;   /* hover state */
+  --bg-border:     #555758;   /* borders */
+  --bg-input:      #383A3E;
 
   /* --- Text --- */
   --t-primary:     #E8E6E0;   /* hlavní text */

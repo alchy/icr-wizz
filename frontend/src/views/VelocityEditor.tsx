@@ -67,30 +67,30 @@ export const VelocityEditor: React.FC = () => {
     const gridX = g.append('g').attr('class', 'grid')
       .attr('transform', `translate(0,${IH})`)
       .call(d3.axisBottom(xScale).ticks(10).tickSize(-IH).tickFormat(() => ''))
-    gridX.selectAll('line').attr('stroke', '#2A2D35').attr('stroke-width', 0.5)
+    gridX.selectAll('line').attr('stroke', '#555758').attr('stroke-width', 0.5)
     gridX.select('.domain').remove()
 
     const gridY = g.append('g').attr('class', 'grid')
       .call(d3.axisLeft(yScale).ticks(5).tickSize(-IW).tickFormat(() => ''))
-    gridY.selectAll('line').attr('stroke', '#2A2D35').attr('stroke-width', 0.5)
+    gridY.selectAll('line').attr('stroke', '#555758').attr('stroke-width', 0.5)
     gridY.select('.domain').remove()
 
     // Referenční čára γ=1
     g.append('line')
       .attr('x1', 0).attr('x2', IW)
       .attr('y1', yScale(1)).attr('y2', yScale(1))
-      .attr('stroke', '#2A2D35').attr('stroke-width', 1).attr('stroke-dasharray', '4,3')
+      .attr('stroke', '#555758').attr('stroke-width', 1).attr('stroke-dasharray', '4,3')
 
     // Osy s texty
     const axisX = g.append('g').attr('transform', `translate(0,${IH})`)
       .call(d3.axisBottom(xScale).ticks(8))
     axisX.selectAll('text').attr('fill', '#9B9892').attr('font-size', 9)
-    axisX.select('.domain').attr('stroke', '#2A2D35')
+    axisX.select('.domain').attr('stroke', '#555758')
 
     const axisY = g.append('g')
       .call(d3.axisLeft(yScale).ticks(5))
     axisY.selectAll('text').attr('fill', '#9B9892').attr('font-size', 9)
-    axisY.select('.domain').attr('stroke', '#2A2D35')
+    axisY.select('.domain').attr('stroke', '#555758')
 
     // Spline čára
     const line = d3.line<number>()

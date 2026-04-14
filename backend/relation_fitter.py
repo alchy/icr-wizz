@@ -326,10 +326,12 @@ class DampingLawFitter(FitPlugin):
         min_quality: float = 0.7,
         sigma_threshold: float = 3.0,
         note_workers: int = _NOTE_WORKERS,
+        spline_smoothing: float = 1.0,
     ):
-        self.min_quality     = min_quality
-        self.sigma_threshold = sigma_threshold
-        self.note_workers    = note_workers
+        self.min_quality      = min_quality
+        self.sigma_threshold  = sigma_threshold
+        self.note_workers     = note_workers
+        self.spline_smoothing = spline_smoothing
 
     @property
     def name(self) -> str:
@@ -406,7 +408,7 @@ class DampingLawFitter(FitPlugin):
             # Pro každý k: fittuj 1/τ1(midi) jako spline s anchor váhami
             # → outlier score per nota založený na odchylce od spline
             outlier_scores_damping: dict[str, float] = {}
-            spline_residuals = self._fit_cross_keyboard_splines(
+            spline_residuals, spline_preds = self._fit_cross_keyboard_splines(
                 bank, weights, midi_groups, op
             )
             for pfx, res in spline_residuals.items():
@@ -423,6 +425,7 @@ class DampingLawFitter(FitPlugin):
                 "damping":                damping,
                 "damping_residuals":      residuals,
                 "outlier_scores_damping": outlier_scores_damping,
+                "damping_spline":         spline_preds,
             }
 
     def predict_tau(self, params: DampingParams, f_hz: float) -> float:
@@ -516,8 +519,9 @@ class DampingLawFitter(FitPlugin):
             (p.k for n in bank.notes.values() for p in n.partials),
             default=0,
         )
+        spline_predictions: dict[str, float] = {}
         if k_max < 2:
-            return {}
+            return {}, spline_predictions
 
         # Per k: sbírej (midi, inv_tau1_median) přes velocity mediány
         per_k_data: dict[int, list[tuple[int, float, float]]] = {}
@@ -550,16 +554,17 @@ class DampingLawFitter(FitPlugin):
 
             # Spline s anchor váhami — vyšší smoothing pro robustnost
             try:
-                # s = None → automatic smoothing, w = anchor váhy
-                # s = len(data) → standardní smoothing, w = anchor váhy
+                s_val = len(data) * self.spline_smoothing
                 spl = UnivariateSpline(midis_arr, inv_tau, w=w_arr,
-                                       s=len(data), k=3)
+                                       s=s_val, k=3)
                 predicted = spl(midis_arr)
                 res = np.abs(inv_tau - predicted) / np.maximum(np.abs(inv_tau), 1e-9)
 
                 for i, (midi, _, _) in enumerate(data):
                     pfx = f"m{midi:03d}"
                     midi_residuals.setdefault(pfx, []).append(float(res[i]))
+                    # Ulož spline predikci pro CorrectionEngine
+                    spline_predictions[f"k{k}_m{midi:03d}"] = float(predicted[i])
             except Exception:
                 continue
 
@@ -568,8 +573,10 @@ class DampingLawFitter(FitPlugin):
         for pfx, res_list in midi_residuals.items():
             result[pfx] = float(np.mean(res_list))
 
-        op.progress("cross-keyboard splines", fitted_k=len(per_k_data), notes=len(result))
-        return result
+        op.progress("cross-keyboard splines",
+                    fitted_k=len(per_k_data), notes=len(result),
+                    predictions=len(spline_predictions))
+        return result, spline_predictions
 
 
 # ---------------------------------------------------------------------------

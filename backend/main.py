@@ -30,7 +30,10 @@ from models import (
     ExportRequest, FitRequest, FitResult, LoadBankRequest,
     NoteParams, WsMessage, WsResponse,
 )
-from relation_fitter import BCurveFitter, RelationFitter, VelocityModelFitter
+from relation_fitter import (
+    BCurveFitter, DampingLawFitter, RelationFitter,
+    SpectralShapeFitter, VelocityModelFitter,
+)
 
 # ---------------------------------------------------------------------------
 # Konfigurace
@@ -93,7 +96,13 @@ app.add_middleware(
 # Singleton sluzby
 # ---------------------------------------------------------------------------
 loader   = BankLoader()
-fitter   = RelationFitter()
+_spline_smoothing = _app_config.get("spline_smoothing", 1.0)
+fitter   = RelationFitter(plugins=[
+    BCurveFitter(),
+    DampingLawFitter(spline_smoothing=_spline_smoothing),
+    SpectralShapeFitter(),
+    VelocityModelFitter(),
+])
 engine   = CorrectionEngine(
     correction_weights=_app_config.get("correction_weights"),
 )

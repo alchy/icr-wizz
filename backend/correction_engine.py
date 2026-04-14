@@ -177,6 +177,38 @@ class CorrectionEngine:
                     except Exception as e:
                         op.warn("nota selhala", key=key, error=str(e))
 
+            # Fáze 2: spline tau korekce pro noty s vysokým damping residuálem
+            # (ne jen globální outliery — detailnější per-nota threshold)
+            if fit.damping_spline:
+                processed_midis = set()
+                for f in futs:
+                    key = futs[f]
+                    m = re.match(r"m(\d+)", key)
+                    if m: processed_midis.add(int(m.group(1)))
+
+                # Spline residuály per midi — z damping_residuals
+                damping_res = {}
+                for key, res in fit.damping.items():
+                    if isinstance(key, int):
+                        vals = [v for v in res.residuals.values() if v > 0.1]
+                        if vals:
+                            damping_res[key] = max(vals)
+
+                tau_extra = 0
+                for note in bank.notes.values():
+                    if note.midi in processed_midis:
+                        continue
+                    # Korekce jen pro noty s per-nota damping residuálem nad prahem
+                    midi_res = damping_res.get(note.midi, 0)
+                    if midi_res < 0.3:  # pod prahem — nota je OK
+                        continue
+                    tau_corrs = self._propose_tau_corrections(note, fit)
+                    all_corrections.extend(tau_corrs)
+                    tau_extra += len(tau_corrs)
+                if tau_extra:
+                    op.progress("spline tau korekce (non-outlier noty)",
+                                extra=tau_extra)
+
             # Filtruj malé změny
             before = len(all_corrections)
             all_corrections = [
@@ -363,57 +395,68 @@ class CorrectionEngine:
         self, note: NoteParams, fit: FitResult
     ) -> list[Correction]:
         """
-        Pro outlier parciály navrhne korekci tau1 z damping law.
+        Pro každý parciál navrhne korekci tau1 z cross-keyboard spline.
+        Spline predikce = jak se 1/tau1 pro tento k mění přes klávesnici
+        (informované anchor váhami). Fallback na lineární damping law.
         tau2 se přizpůsobí zachováním poměru tau2/tau1 z cluster mediánu.
         """
         log = get_logger(__name__, cls="CorrectionEngine",
                          method="_propose_tau_corrections")
         corrections: list[Correction] = []
-        params = fit.damping.get(note.midi)
-        if params is None:
-            return corrections
 
-        # Mediánový poměr tau2/tau1 pro tento register (fyzikální cluster)
+        # Mediánový poměr tau2/tau1 pro tento register
         n_strings = note.n_strings
         if n_strings == 1:
-            tau_ratio_ref = 15.0   # bass: typicky 10–25×
+            tau_ratio_ref = 15.0
         elif n_strings == 2:
-            tau_ratio_ref = 12.0   # střed: 8–20×
+            tau_ratio_ref = 12.0
         else:
-            tau_ratio_ref = 8.0    # výšky: 5–15×
+            tau_ratio_ref = 8.0
+
+        # Lineární fallback
+        params = fit.damping.get(note.midi)
 
         for p in note.partials:
             if p.fit_quality < 0.5:
-                continue  # příliš nízká kvalita pro spolehlivou korekci
+                continue
 
-            # Predikce tau1 z damping law
-            fk      = p.f_hz
-            denom   = params.R + params.eta * fk * fk
-            tau1_pred = 1.0 / max(denom, 1e-9)
+            # Spline predikce (preferovaná)
+            spline_key = f"k{p.k}_m{note.midi:03d}"
+            inv_tau_pred = fit.damping_spline.get(spline_key)
+
+            if inv_tau_pred is not None and inv_tau_pred > 1e-9:
+                tau1_pred = 1.0 / inv_tau_pred
+            elif params is not None:
+                # Fallback: lineární damping law
+                denom = params.R + params.eta * p.f_hz * p.f_hz
+                tau1_pred = 1.0 / max(denom, 1e-9)
+            else:
+                continue
 
             delta_frac = abs(tau1_pred - p.tau1) / max(p.tau1, 1e-9)
             if delta_frac * 100 < self.min_delta_pct:
                 continue
 
-            # tau1 korekce
             corrections.append(Correction(
                 midi=note.midi, vel=note.vel,
                 field=f"tau1_k{p.k}",
                 original=p.tau1, corrected=tau1_pred,
                 source=CorrectionSource.DAMPING_LAW,
             ))
-            log.debug(f"tau1 korekce  {note.note_key}  k={p.k}  "
+            log.debug(f"tau1 spline korekce  {note.note_key}  k={p.k}  "
                       f"orig={p.tau1:.3f}  pred={tau1_pred:.3f}")
 
-            # tau2 korekce — zachovat poměr tau2/tau1
-            tau2_pred = tau1_pred * tau_ratio_ref
-            if abs(tau2_pred - p.tau2) / max(p.tau2, 1e-9) * 100 >= self.min_delta_pct:
-                corrections.append(Correction(
-                    midi=note.midi, vel=note.vel,
-                    field=f"tau2_k{p.k}",
-                    original=p.tau2, corrected=tau2_pred,
-                    source=CorrectionSource.DAMPING_LAW,
-                ))
+            # tau2 — zachovat originální poměr tau2/tau1
+            if p.tau1 > 0 and p.tau2 > 0:
+                orig_ratio = p.tau2 / p.tau1
+                tau2_pred = tau1_pred * orig_ratio
+                if abs(tau2_pred - p.tau2) / max(p.tau2, 1e-9) * 100 >= self.min_delta_pct:
+                    corrections.append(Correction(
+                        midi=note.midi, vel=note.vel,
+                        field=f"tau2_k{p.k}",
+                        original=p.tau2, corrected=tau2_pred,
+                        source=CorrectionSource.DAMPING_LAW,
+                    ))
 
         return corrections
 

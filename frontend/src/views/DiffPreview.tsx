@@ -158,6 +158,26 @@ export const DiffPreview: React.FC = () => {
     }
   }
 
+  async function handleRBF() {
+    if (!activePath) return
+    setApplying(true)
+    setStatus(`RBF surface (${tensionVal})…`)
+    try {
+      const cs = await correctionsApi.rbf(
+        activePath, activeAnchor?.name, tensionVal)
+      useCorrectionStore.setState({
+        pending: cs,
+        selected: new Set(cs.corrections.map(
+          (c: any) => `${c.midi}_${c.vel}_${c.field}`)),
+      })
+      setStatus(`RBF: ${cs.corrections.length} korekcí`)
+    } catch (e: any) {
+      setStatus(`Chyba: ${e.message}`)
+    } finally {
+      setApplying(false)
+    }
+  }
+
   if (!pending) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -178,6 +198,11 @@ export const DiffPreview: React.FC = () => {
                   disabled={!activePath || !activeAnchor || applying}
                   style={{ background: 'var(--c-fit)' }}>
             {applying ? '…' : 'PCA'}
+          </button>
+          <button className="btn btn--accent" onClick={handleRBF}
+                  disabled={!activePath || !activeAnchor || applying}
+                  style={{ background: 'var(--c-mid)' }}>
+            {applying ? '…' : 'RBF'}
           </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: 11 }}>
@@ -296,6 +321,11 @@ export const DiffPreview: React.FC = () => {
                   disabled={!activePath || !activeAnchor || applying}
                   style={{ background: 'var(--c-fit)', color: '#fff' }}>
             {applying ? '…' : '◎ PCA'}
+          </button>
+          <button className="btn" onClick={handleRBF}
+                  disabled={!activePath || !activeAnchor || applying}
+                  style={{ background: 'var(--c-mid)', color: '#fff' }}>
+            {applying ? '…' : '◈ RBF'}
           </button>
           <button className="btn" onClick={handlePropose}
                   disabled={!activePath || !summary || applying}>

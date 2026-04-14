@@ -559,6 +559,47 @@ def propose_pca_corrections(bank, anchor_db, ...) -> CorrectionSet:
 
 ---
 
+## rbf_surface.py — RBF Surface
+
+**Odpovědnost:** anchor-based korekce fitováním hladkých RBF ploch přes anchor body v (midi, vel) prostoru. Na rozdíl od IDW (Tension, PCA) vytváří globální model tvaru variace.
+
+**Paralelizace:** sekvenční — scipy RBFInterpolator řeší 39×39 systém, ~2ms.
+
+```python
+class RBFCorrector:
+    def __init__(self,
+                 kernel: str = "thin_plate_spline",
+                 smoothing: float = 0.0,
+                 tension: float = 0.5,
+                 min_delta_pct: float = 1.0,
+                 max_delta_pct: float = 200.0,
+                 k_max: int = 30): ...
+
+    def fit(self, bank: BankState, anchor_db: AnchorDatabase) -> dict: ...
+    def interpolate(self, midi: int, vel: int) -> np.ndarray: ...
+    def propose(self, bank: BankState, anchor_db: AnchorDatabase) -> CorrectionSet: ...
+
+def propose_rbf_corrections(bank, anchor_db, ...) -> CorrectionSet:
+    """Convenience: fit + propose v jednom."""
+```
+
+**Pipeline:**
+1. **Fit:** extrahuj anchor vektory v log prostoru, sestav pozice X=(midi/12, vel) a hodnoty Y
+2. **RBFInterpolator:** fituj `scipy.interpolate.RBFInterpolator(X, Y, kernel=...)` — multivariate output (155 parametrů najednou)
+3. **Interpolace:** evaluuj surface na (midi, vel) → cílový log-space vektor
+4. **Blend:** log-space pro multiplikativní parametry, lineární pro ostatní
+
+**Dostupná jádra:** `thin_plate_spline` (default, hladké, bez hyperparametrů), `multiquadric`, `gaussian`, `cubic`, `linear`, `quintic`.
+
+**Klíčový rozdíl oproti PCA a Tension:**
+- **Tension:** IDW — žádný model tvaru, per-parametr nezávisle
+- **PCA:** IDW v latentním prostoru — zachovává korelace, ale redukce dimenze zahazuje informaci
+- **RBF:** globální povrch — strukturovaný model variace v plném parametrovém prostoru, zachovává korelace přirozeně (surface prochází anchor body)
+
+**Smoothing:** 0.0 = přesná interpolace (povrch prochází anchor body). Kladná hodnota = aproximace (užitečné pro anchory s nízkým confidence score).
+
+---
+
 ## bank_exporter.py — BankExporter
 
 **Odpovědnost:** exportovat opravenou banku do engine-kompatibilního JSON.

@@ -99,13 +99,32 @@ export const DiffPreview: React.FC = () => {
     }
   }, [pending])
 
+  const { propose } = useCorrectionStore()
+
+  async function handlePropose() {
+    if (!activePath || !summary) return
+    setApplying(true)
+    setStatus('Navrhuji korekce…')
+    try {
+      await propose(activePath, summary)
+      setStatus('Korekce navrženy')
+    } catch (e: any) {
+      setStatus(`Chyba: ${e.message}`)
+    } finally {
+      setApplying(false)
+    }
+  }
+
   if (!pending) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
                     justifyContent: 'center', height: '100%', gap: 'var(--sp-4)',
                     color: 'var(--t-muted)' }}>
         <span style={{ fontSize: 13 }}>Nejsou žádné korekce k zobrazení.</span>
-        <span style={{ fontSize: 11 }}>Spusťte analýzu a poté použijte "Navrhnout korekce".</span>
+        <button className="btn btn--accent" onClick={handlePropose}
+                disabled={!activePath || !summary || applying}>
+          {applying ? '…' : 'Navrhnout korekce'}
+        </button>
       </div>
     )
   }

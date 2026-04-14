@@ -219,6 +219,10 @@ export const midiApi = {
   play: (midi: number, velocity = 100, duration_s = 3.0) =>
     post<{ status: string }>('/midi/play', { midi, velocity, duration_s }),
 
+  uploadBank: (bankPath: string) =>
+    post<{ chunks_total: number; chunks_sent: number; bytes: number }>(
+      '/midi/upload-bank', { bank_path: bankPath }),
+
   patch: (bankPath: string, midiRange?: [number, number], velRange?: [number, number]) =>
     post<{ total: number; success: number; failed: number; errors: string[] }>(
       '/midi/patch', { bank_path: bankPath, midi_range: midiRange, vel_range: velRange }

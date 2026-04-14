@@ -523,6 +523,9 @@ class MidiPlayRequest(BaseModel):
     velocity: int = 100  # 1-127
     duration_s: float = 3.0
 
+class MidiUploadBankRequest(BaseModel):
+    bank_path: str     # cesta k JSON bance pro upload
+
 @app.post("/midi/play")
 async def midi_play(request: MidiPlayRequest):
     """Pošle note_on, počká duration_s, pošle note_off. Async — neblokuje."""
@@ -541,6 +544,83 @@ async def midi_play(request: MidiPlayRequest):
 
     asyncio.ensure_future(_send_note_off())
     return {"status": "playing", "midi": midi, "velocity": vel, "duration_s": request.duration_s}
+
+# ---------------------------------------------------------------------------
+# SysEx SET_BANK — chunked JSON upload do ICR
+# ---------------------------------------------------------------------------
+_SYSEX_MANUF   = 0x7D   # non-commercial
+_SYSEX_DEVICE  = 0x01   # ICR
+_SYSEX_CMD_SET_BANK = 0x03
+_SYSEX_CORE_ADDITIVE = 0x01
+_SYSEX_CHUNK_MAX = 240  # max payload bytes per chunk
+_SYSEX_CHUNK_DELAY = 0.002  # 2ms inter-chunk delay
+
+def _encode_21bit(val: int) -> list[int]:
+    """Encode integer as 3 × 7-bit bytes (MSB first)."""
+    return [(val >> 14) & 0x7F, (val >> 7) & 0x7F, val & 0x7F]
+
+def _sysex_bank_chunks(json_bytes: bytes) -> list[list[int]]:
+    """Rozděl JSON banku na SysEx chunky pro SET_BANK (0x03)."""
+    total_chunks = (len(json_bytes) + _SYSEX_CHUNK_MAX - 1) // _SYSEX_CHUNK_MAX
+    chunks = []
+    for i in range(total_chunks):
+        offset = i * _SYSEX_CHUNK_MAX
+        data = json_bytes[offset:offset + _SYSEX_CHUNK_MAX]
+        # 7-bit encode: data bytes musí být < 0x80
+        # JSON je ASCII, takže většina je OK; pro jistotu encodujeme byte-by-byte
+        safe_data = []
+        for b in data:
+            if b < 0x80:
+                safe_data.append(b)
+            else:
+                # UTF-8 byte > 127 — split na dva 7-bit bajty
+                safe_data.append(0x00)  # escape marker
+                safe_data.append(b & 0x7F)
+        frame = [
+            0xF0,
+            _SYSEX_MANUF, _SYSEX_DEVICE,
+            _SYSEX_CMD_SET_BANK,
+            _SYSEX_CORE_ADDITIVE,
+            *_encode_21bit(i),           # chunk index
+            *_encode_21bit(total_chunks), # total chunks
+            *safe_data,
+            0xF7,
+        ]
+        chunks.append(frame)
+    return chunks
+
+def _send_sysex_bank(json_bytes: bytes) -> dict:
+    """Synchronně pošle všechny chunky přes _midi_out. Volat z executoru."""
+    import time as _time
+    chunks = _sysex_bank_chunks(json_bytes)
+    log = get_logger("main", method="send_sysex_bank")
+    log.info(f"SysEx SET_BANK: {len(json_bytes)} bytes → {len(chunks)} chunks")
+    sent = 0
+    for i, frame in enumerate(chunks):
+        _midi_out.send_message(frame)
+        sent += 1
+        if i < len(chunks) - 1:
+            _time.sleep(_SYSEX_CHUNK_DELAY)
+    log.info(f"SysEx SET_BANK done: {sent}/{len(chunks)} chunks sent")
+    return {"chunks_total": len(chunks), "chunks_sent": sent, "bytes": len(json_bytes)}
+
+@app.post("/midi/upload-bank")
+async def upload_bank_sysex(request: MidiUploadBankRequest):
+    """Načte JSON banku a pošle ji do ICR přes SysEx SET_BANK (chunked)."""
+    if not _midi_out:
+        raise HTTPException(503, "MIDI OUT není připojen")
+    log = get_logger("main", method="upload_bank_sysex")
+    try:
+        p = Path(request.bank_path)
+        if not p.exists():
+            raise _err(log, 404, f"Soubor nenalezen: {request.bank_path}")
+        json_bytes = p.read_bytes()
+        result = await _run_blocking(_send_sysex_bank, json_bytes)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _err(log, 500, str(e), e)
 
 @app.post("/midi/patch")
 async def patch_synth(request: MidiPatchRequest):

@@ -14,6 +14,7 @@ import { MidiPanel }       from './views/MidiPanel'
 import { PanelNav }        from './components/PanelNav'
 import { VelocitySelector }from './components/VelocitySelector'
 import { FitHeatmap }      from './components/FitHeatmap'
+import { BankActions }     from './components/BankActions'
 import { StatusBar }       from './views/StatusBar'
 import { useBankStore }    from './store/bankStore'
 import { useUiStore }      from './store/uiStore'
@@ -110,14 +111,18 @@ export default function App() {
             }}>
               <FitHeatmap />
             </div>
-            {/* Velocity selektor + anchor vpravo */}
+            {/* Velocity selektor + anchor + akce vpravo */}
             <div style={{
               flexShrink: 0,
               display: 'flex',
               alignItems: 'flex-start',
+              gap: 'var(--sp-4)',
               paddingTop: 'var(--sp-1)',
             }}>
               <VelocitySelector />
+              <div style={{ borderLeft: '1px solid var(--bg-border)', paddingLeft: 'var(--sp-3)' }}>
+                <BankActions />
+              </div>
             </div>
           </div>
         ) : (

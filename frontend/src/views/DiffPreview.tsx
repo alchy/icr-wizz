@@ -219,7 +219,19 @@ export const DiffPreview: React.FC = () => {
           <div className="label">max Δ</div>
         </div>
         <div ref={histRef} style={{ flex: 1, minWidth: 0 }} />
+        <button className="btn" onClick={handlePropose}
+                disabled={!activePath || !summary || applying}
+                style={{ marginLeft: 'auto', flexShrink: 0 }}>
+          {applying ? '…' : '↻ Přepočítat'}
+        </button>
       </div>
+
+      {pending.corrections.length === 0 && (
+        <div style={{ padding: 'var(--sp-4)', textAlign: 'center',
+                      color: 'var(--t-muted)', fontSize: 13 }}>
+          Žádné korekce nebyly navrženy — parametry banky jsou v rámci tolerancí fitu.
+        </div>
+      )}
 
       {/* Filtry */}
       <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>

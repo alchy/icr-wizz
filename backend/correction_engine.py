@@ -116,16 +116,27 @@ class CorrectionEngine:
             with ThreadPoolExecutor(max_workers=self.note_workers) as ex:
                 futs = {}
                 for key in outlier_keys:
-                    m = re.match(r"m(\d+)_vel(\d+)", key)
-                    if not m:
+                    # Outlier scores mají prefix klíče "m060" — expanduj na noty v bance
+                    m_pfx = re.match(r"m(\d+)$", key)
+                    m_vel = re.match(r"m(\d+)_vel(\d+)", key)
+                    if m_vel:
+                        midi = int(m_vel.group(1))
+                        vel  = int(m_vel.group(2))
+                        note = bank.get_note(midi, vel)
+                        if note is None:
+                            op.warn("outlier nota není v bance", key=key)
+                            continue
+                        futs[ex.submit(self._propose_note_corrections, note, fit)] = key
+                    elif m_pfx:
+                        midi = int(m_pfx.group(1))
+                        for vel in range(8):
+                            note = bank.get_note(midi, vel)
+                            if note is None:
+                                continue
+                            nk = f"m{midi:03d}_vel{vel}"
+                            futs[ex.submit(self._propose_note_corrections, note, fit)] = nk
+                    else:
                         continue
-                    midi = int(m.group(1))
-                    vel  = int(m.group(2))
-                    note = bank.get_note(midi, vel)
-                    if note is None:
-                        op.warn("outlier nota není v bance", key=key)
-                        continue
-                    futs[ex.submit(self._propose_note_corrections, note, fit)] = key
 
                 for fut in as_completed(futs):
                     key = futs[fut]

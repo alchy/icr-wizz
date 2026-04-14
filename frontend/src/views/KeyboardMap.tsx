@@ -195,7 +195,6 @@ export const KeyboardMap: React.FC = () => {
           openDialog(midi)
         } else {
           selectNote(midi)
-          // Velocity 0-7 → MIDI velocity 1-127
           const midiVel = Math.round(1 + (selectedVel / 7) * 126)
           midiApi.play(midi, midiVel).catch(() => {})
         }

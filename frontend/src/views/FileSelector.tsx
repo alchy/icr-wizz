@@ -43,7 +43,10 @@ export const FileSelector: React.FC = () => {
         setDirectory(dir)
       }
 
-      // 3. Anchor DB
+      // 3. Anchor DB — načti seznam, pak vyber poslední
+      await loadDatabases().catch(() => {})
+      if (cancelled) return
+
       const lastAnchor = cfg.last_anchor_db
       if (typeof lastAnchor === 'string' && lastAnchor) {
         await selectDb(lastAnchor).catch(() => {})
@@ -56,7 +59,6 @@ export const FileSelector: React.FC = () => {
         handleLoad(lastBank)
       }
     })()
-    loadDatabases().catch(() => {})
     return () => { cancelled = true; previewSocket.disconnect() }
   }, [loadDatabases])
 
@@ -220,8 +222,9 @@ export const FileSelector: React.FC = () => {
                 if (e.target.value === '__new__') {
                   setShowNewDb(true)
                 } else if (e.target.value) {
-                  selectDb(e.target.value)
-                  configApi.patch({ last_anchor_db: e.target.value }).catch(() => {})
+                  selectDb(e.target.value).then(() => {
+                    configApi.patch({ last_anchor_db: e.target.value }).catch(() => {})
+                  }).catch(() => {})
                 }
               }}
             >

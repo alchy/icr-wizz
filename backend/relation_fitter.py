@@ -130,9 +130,13 @@ class BCurveFitter(FitPlugin):
 
     _log = get_logger(__name__, cls="BCurveFitter")
 
-    def __init__(self, break_midi: Optional[int] = None, sigma_threshold: float = 2.5):
-        self.break_midi      = break_midi
-        self.sigma_threshold = sigma_threshold
+    def __init__(self, break_midi: Optional[int] = None, sigma_threshold: float = 2.5,
+                 spline_smoothing: float = 1.0):
+        self.break_midi       = break_midi
+        self.sigma_threshold  = sigma_threshold
+        self.spline_smoothing = spline_smoothing
+        self._spl_bass = None
+        self._spl_treble = None
 
     @property
     def name(self) -> str:
@@ -166,23 +170,47 @@ class BCurveFitter(FitPlugin):
             mask_bass = log_f0 < lbk
             mask_tre  = ~mask_bass
 
-            if mask_bass.sum() < 2 or mask_tre.sum() < 2:
-                op.warn("segment < 2 body", bass=int(mask_bass.sum()),
+            if mask_bass.sum() < 4 or mask_tre.sum() < 4:
+                op.warn("segment < 4 body", bass=int(mask_bass.sum()),
                         treble=int(mask_tre.sum()))
                 return {"b_curve": None, "outlier_scores_b": {}}
 
-            a_b, b_b = self._weighted_linear_fit(
-                log_f0[mask_bass], log_B[mask_bass], w_arr[mask_bass])
-            a_t, b_t = self._weighted_linear_fit(
-                log_f0[mask_tre],  log_B[mask_tre],  w_arr[mask_tre])
+            # Spline fit per segment (v log-log prostoru)
+            from scipy.interpolate import UnivariateSpline
 
-            op.progress("segmenty nafitovány",
-                        alpha_bass=round(a_b, 3), alpha_treble=round(a_t, 3))
+            s_bass = max(4, int(mask_bass.sum() * self.spline_smoothing))
+            s_tre  = max(4, int(mask_tre.sum() * self.spline_smoothing))
+
+            try:
+                self._spl_bass = UnivariateSpline(
+                    log_f0[mask_bass], log_B[mask_bass],
+                    w=w_arr[mask_bass], s=s_bass, k=3)
+                self._spl_treble = UnivariateSpline(
+                    log_f0[mask_tre], log_B[mask_tre],
+                    w=w_arr[mask_tre], s=s_tre, k=3)
+            except Exception as e:
+                op.warn("spline fit selhal, fallback na lineární", error=str(e))
+                a_b, b_b = self._weighted_linear_fit(
+                    log_f0[mask_bass], log_B[mask_bass], w_arr[mask_bass])
+                a_t, b_t = self._weighted_linear_fit(
+                    log_f0[mask_tre], log_B[mask_tre], w_arr[mask_tre])
+                self._spl_bass = None
+                self._spl_treble = None
+
+            op.progress("segmenty nafitovány (spline)",
+                        bass_pts=int(mask_bass.sum()),
+                        treble_pts=int(mask_tre.sum()))
 
             # Residuály a outlier skóre
-            predicted = np.where(mask_bass,
-                                  a_b * log_f0 + b_b,
-                                  a_t * log_f0 + b_t)
+            if self._spl_bass is not None:
+                predicted = np.where(mask_bass,
+                                      self._spl_bass(log_f0),
+                                      self._spl_treble(log_f0))
+            else:
+                predicted = np.where(mask_bass,
+                                      a_b * log_f0 + b_b,
+                                      a_t * log_f0 + b_t)
+
             residuals_arr = log_B - predicted
             med, sigma = mad_sigma(residuals_arr)
             z_scores   = np.abs(residuals_arr - med) / sigma
@@ -193,7 +221,6 @@ class BCurveFitter(FitPlugin):
                 op.warn("B outliery", count=len(outlier_midis),
                         midis=outlier_midis[:6])
 
-            # Klíče pro outlier_scores: "m{midi:03d}"
             outlier_scores = {
                 f"m{midis[i]:03d}": float(
                     min(z_scores[i] / (self.sigma_threshold * 2), 1.0)
@@ -203,9 +230,15 @@ class BCurveFitter(FitPlugin):
             residuals_dict = {midis[i]: float(residuals_arr[i])
                               for i in range(len(midis))}
 
-            op.set_output({"alpha_bass": round(a_b, 3),
-                           "alpha_treble": round(a_t, 3),
-                           "outliers": len(outlier_midis)})
+            # Lineární approximace pro BCurveParams (zpětná kompatibilita)
+            a_b, b_b = self._weighted_linear_fit(
+                log_f0[mask_bass], log_B[mask_bass], w_arr[mask_bass])
+            a_t, b_t = self._weighted_linear_fit(
+                log_f0[mask_tre], log_B[mask_tre], w_arr[mask_tre])
+
+            op.set_output({"break_midi": break_midi,
+                           "outliers": len(outlier_midis),
+                           "spline": self._spl_bass is not None})
 
             return {
                 "b_curve": BCurveParams(
@@ -218,12 +251,17 @@ class BCurveFitter(FitPlugin):
             }
 
     def predict_B(self, params: BCurveParams, midi: int) -> float:
-        """Predikuje B pro MIDI notu z fitted BCurveParams."""
+        """Predikuje B pro MIDI notu — spline pokud dostupný, jinak lineární."""
         lf0 = math.log10(midi_to_f0(midi))
         lbk = math.log10(midi_to_f0(params.break_midi))
         if lf0 < lbk:
+            if self._spl_bass is not None:
+                return 10 ** float(self._spl_bass(lf0))
             return 10 ** (params.alpha_bass * lf0 + params.beta_bass)
-        return 10 ** (params.alpha_treble * lf0 + params.beta_treble)
+        else:
+            if self._spl_treble is not None:
+                return 10 ** float(self._spl_treble(lf0))
+            return 10 ** (params.alpha_treble * lf0 + params.beta_treble)
 
     def _collect_points(
         self, bank: BankState, weights: dict[str, float]
@@ -326,10 +364,12 @@ class DampingLawFitter(FitPlugin):
         min_quality: float = 0.7,
         sigma_threshold: float = 3.0,
         note_workers: int = _NOTE_WORKERS,
+        spline_smoothing: float = 1.0,
     ):
-        self.min_quality     = min_quality
-        self.sigma_threshold = sigma_threshold
-        self.note_workers    = note_workers
+        self.min_quality      = min_quality
+        self.sigma_threshold  = sigma_threshold
+        self.note_workers     = note_workers
+        self.spline_smoothing = spline_smoothing
 
     @property
     def name(self) -> str:
@@ -402,8 +442,18 @@ class DampingLawFitter(FitPlugin):
                         except Exception as e:
                             op.warn("nota selhal", midi=midi, error=str(e))
 
+            # Cross-keyboard spline per parciál k
+            # Pro každý k: fittuj 1/τ1(midi) jako spline s anchor váhami
+            # → outlier score per nota založený na odchylce od spline
+            outlier_scores_damping: dict[str, float] = {}
+            spline_residuals, spline_preds = self._fit_cross_keyboard_splines(
+                bank, weights, midi_groups, op
+            )
+            for pfx, res in spline_residuals.items():
+                outlier_scores_damping[pfx] = min(res / (self.sigma_threshold * 2), 1.0)
+
             outlier_count = sum(
-                1 for v in residuals.values() if v > self.sigma_threshold
+                1 for v in outlier_scores_damping.values() if v > 0.5
             )
             op.set_output({
                 "fitted": len(damping),
@@ -412,7 +462,8 @@ class DampingLawFitter(FitPlugin):
             return {
                 "damping":                damping,
                 "damping_residuals":      residuals,
-                # outlier_scores budou agregovány v RelationFitter
+                "outlier_scores_damping": outlier_scores_damping,
+                "damping_spline":         spline_preds,
             }
 
     def predict_tau(self, params: DampingParams, f_hz: float) -> float:
@@ -486,6 +537,105 @@ class DampingLawFitter(FitPlugin):
                 residuals_dict[f"m{midi:03d}_k{k}"] = res
 
         return DampingParams(R=R, eta=eta, residuals=residuals_dict), residuals_dict
+
+    def _fit_cross_keyboard_splines(
+        self,
+        bank: BankState,
+        weights: dict[str, float],
+        midi_groups: dict[int, list[NoteParams]],
+        op: OperationLogger,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """
+        Per-parciál k: fittuj 1/τ1(midi, vel) jako 2D spline.
+        Osa X = MIDI, osa Y = velocity. Anchor váhy ovlivňují fit.
+        Vrátí (outlier_residuals, spline_predictions).
+        Predictions klíč: "k{k}_m{midi:03d}_v{vel}" → predicted 1/tau1.
+        """
+        from scipy.interpolate import UnivariateSpline
+
+        k_max = max(
+            (p.k for n in bank.notes.values() for p in n.partials),
+            default=0,
+        )
+        spline_predictions: dict[str, float] = {}
+        if k_max < 2:
+            return {}, spline_predictions
+
+        # Per k: sbírej (midi, vel, inv_tau1, weight) — per nota, ne mediánované
+        per_k_data: dict[int, list[tuple[int, int, float, float]]] = {}
+        for note in bank.notes.values():
+            w = weights.get(note.note_key, weights.get(f"m{note.midi:03d}_vel4", 1.0))
+            for p in note.partials:
+                if p.fit_quality >= self.min_quality and p.tau1 > 0:
+                    per_k_data.setdefault(p.k, []).append(
+                        (note.midi, note.vel, 1.0 / p.tau1, w)
+                    )
+
+        # Per k: fittuj 1D spline per velocity vrstvu
+        # (2D RectBivariateSpline potřebuje grid — naše data nejsou grid)
+        # Alternativa: per-vel 1D spline přes MIDI osu
+        midi_residuals: dict[str, list[float]] = {}
+
+        for k in range(1, min(k_max + 1, 61)):
+            data = per_k_data.get(k)
+            if not data or len(data) < 6:
+                continue
+
+            # Seskup per velocity
+            per_vel: dict[int, list[tuple[int, float, float]]] = {}
+            for midi, vel, inv_tau, w in data:
+                per_vel.setdefault(vel, []).append((midi, inv_tau, w))
+
+            for vel, vel_data in per_vel.items():
+                if len(vel_data) < 4:
+                    continue
+
+                # Seřaď per MIDI
+                vel_data.sort(key=lambda x: x[0])
+                midis_arr = np.array([d[0] for d in vel_data], dtype=float)
+                inv_tau   = np.array([d[1] for d in vel_data])
+                w_arr     = np.array([d[2] for d in vel_data])
+
+                # Deduplikace MIDI (UnivariateSpline vyžaduje unikátní x)
+                if len(set(midis_arr)) < len(midis_arr):
+                    unique_midis = sorted(set(midis_arr))
+                    new_inv = []
+                    new_w = []
+                    for m in unique_midis:
+                        mask = midis_arr == m
+                        new_inv.append(float(np.mean(inv_tau[mask])))
+                        new_w.append(float(np.max(w_arr[mask])))
+                    midis_arr = np.array(unique_midis)
+                    inv_tau = np.array(new_inv)
+                    w_arr = np.array(new_w)
+
+                if len(midis_arr) < 4:
+                    continue
+
+                try:
+                    s_val = len(midis_arr) * self.spline_smoothing
+                    spl = UnivariateSpline(midis_arr, inv_tau, w=w_arr,
+                                           s=s_val, k=3)
+                    predicted = spl(midis_arr)
+                    res = np.abs(inv_tau - predicted) / np.maximum(np.abs(inv_tau), 1e-9)
+
+                    for i, midi in enumerate(midis_arr):
+                        midi_int = int(midi)
+                        pfx = f"m{midi_int:03d}"
+                        midi_residuals.setdefault(pfx, []).append(float(res[i]))
+                        spline_predictions[f"k{k}_m{midi_int:03d}_v{vel}"] = float(predicted[i])
+                except Exception:
+                    continue
+
+        # Agreguj residuály per midi → mean
+        result: dict[str, float] = {}
+        for pfx, res_list in midi_residuals.items():
+            result[pfx] = float(np.mean(res_list))
+
+        op.progress("cross-keyboard splines (per-vel)",
+                    fitted_k=len(per_k_data), notes=len(result),
+                    predictions=len(spline_predictions))
+        return result, spline_predictions
 
 
 # ---------------------------------------------------------------------------

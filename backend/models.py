@@ -388,6 +388,9 @@ class FitResult(BaseModel):
     # damping law per nota: {midi: DampingParams}
     damping: dict[int, DampingParams] = Field(default_factory=dict)
 
+    # damping spline predikce: {"k{k}_m{midi}": predicted_inv_tau1}
+    damping_spline: dict[str, float] = Field(default_factory=dict)
+
     # spektrální tvar: residuály v dB per nota+vel
     shape_residuals: dict[str, float] = Field(default_factory=dict)
 

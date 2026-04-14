@@ -23,6 +23,7 @@ from anchor_manager import AnchorManager, AnchorError, AnchorNotFoundError
 from bank_exporter import BankExporter
 from bank_loader import BankLoader, BankLoadError
 from correction_engine import CorrectionEngine
+from tension_manifold import propose_tension_corrections
 from logger import app_log, get_logger
 from midi_bridge import MidiBridge, MidiConnectionError
 from models import (
@@ -30,7 +31,10 @@ from models import (
     ExportRequest, FitRequest, FitResult, LoadBankRequest,
     NoteParams, WsMessage, WsResponse,
 )
-from relation_fitter import BCurveFitter, RelationFitter, VelocityModelFitter
+from relation_fitter import (
+    BCurveFitter, DampingLawFitter, RelationFitter,
+    SpectralShapeFitter, VelocityModelFitter,
+)
 
 # ---------------------------------------------------------------------------
 # Konfigurace
@@ -93,7 +97,13 @@ app.add_middleware(
 # Singleton sluzby
 # ---------------------------------------------------------------------------
 loader   = BankLoader()
-fitter   = RelationFitter()
+_spline_smoothing = _app_config.get("spline_smoothing", 1.0)
+fitter   = RelationFitter(plugins=[
+    BCurveFitter(spline_smoothing=_spline_smoothing),
+    DampingLawFitter(spline_smoothing=_spline_smoothing),
+    SpectralShapeFitter(),
+    VelocityModelFitter(),
+])
 engine   = CorrectionEngine(
     correction_weights=_app_config.get("correction_weights"),
 )
@@ -342,6 +352,38 @@ async def propose_corrections(bank_path: str, fit_result: dict):
         return cs
     except BankLoadError as e: raise _err(log, 404, str(e), e)
     except Exception as e:     raise _err(log, 500, str(e), e)
+
+class TensionRequest(BaseModel):
+    bank_path: str
+    anchor_db_name: Optional[str] = None
+    tension: float = 0.5
+    falloff: float = 12.0
+    min_delta_pct: float = 1.0
+    max_delta_pct: float = 200.0
+
+@app.post("/corrections/tension", response_model=CorrectionSet)
+async def propose_tension(request: TensionRequest):
+    log = get_logger("main", method="propose_tension")
+    try:
+        bank = await _run_blocking(loader.load, request.bank_path)
+        db_name = request.anchor_db_name
+        if not db_name:
+            db_name = _app_config.get("last_anchor_db")
+        if not db_name:
+            raise _err(log, 400, "Není vybrána anchor DB")
+        anchor_db = await _run_blocking(mgr.load, db_name)
+        cs = await _run_blocking(
+            propose_tension_corrections, bank, anchor_db,
+            tension=request.tension,
+            falloff=request.falloff,
+            min_delta_pct=request.min_delta_pct,
+            max_delta_pct=request.max_delta_pct,
+        )
+        log.info(f"tension corrections={len(cs.corrections)}")
+        return cs
+    except AnchorNotFoundError as e: raise _err(log, 404, str(e), e)
+    except BankLoadError as e: raise _err(log, 404, str(e), e)
+    except Exception as e: raise _err(log, 500, str(e), e)
 
 @app.post("/corrections/apply", response_model=ApplyResponse)
 async def apply_corrections(request: ApplyRequest):

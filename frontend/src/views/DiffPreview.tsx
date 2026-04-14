@@ -9,7 +9,8 @@ import { useCorrectionStore } from '../store/correctionStore'
 import { useBankStore }       from '../store/bankStore'
 import { useFitStore }        from '../store/fitStore'
 import { useUiStore }         from '../store/uiStore'
-import { exportApi, midiApi } from '../api/client'
+import { exportApi, midiApi, correctionsApi } from '../api/client'
+import { useAnchorStore }    from '../store/anchorStore'
 import { midiToNoteName }     from '../types'
 import type { Correction }    from '../types'
 
@@ -100,6 +101,8 @@ export const DiffPreview: React.FC = () => {
   }, [pending])
 
   const { propose } = useCorrectionStore()
+  const activeAnchor = useAnchorStore(s => s.active)
+  const [tensionVal, setTensionVal] = useState(0.5)
 
   async function handlePropose() {
     if (!activePath || !summary) return
@@ -115,16 +118,51 @@ export const DiffPreview: React.FC = () => {
     }
   }
 
+  async function handleTension() {
+    if (!activePath) return
+    setApplying(true)
+    setStatus(`Tension manifold (${tensionVal})…`)
+    try {
+      const cs = await correctionsApi.tension(
+        activePath, activeAnchor?.name, tensionVal)
+      // Ulož do correctionStore
+      useCorrectionStore.setState({
+        pending: cs,
+        selected: new Set(cs.corrections.map(
+          (c: any) => `${c.midi}_${c.vel}_${c.field}`)),
+      })
+      setStatus(`Tension: ${cs.corrections.length} korekcí`)
+    } catch (e: any) {
+      setStatus(`Chyba: ${e.message}`)
+    } finally {
+      setApplying(false)
+    }
+  }
+
   if (!pending) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
                     justifyContent: 'center', height: '100%', gap: 'var(--sp-4)',
                     color: 'var(--t-muted)' }}>
         <span style={{ fontSize: 13 }}>Nejsou žádné korekce k zobrazení.</span>
-        <button className="btn btn--accent" onClick={handlePropose}
-                disabled={!activePath || !summary || applying}>
-          {applying ? '…' : 'Navrhnout korekce'}
-        </button>
+        <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}>
+          <button className="btn btn--accent" onClick={handlePropose}
+                  disabled={!activePath || !summary || applying}>
+            {applying ? '…' : 'Fit korekce'}
+          </button>
+          <button className="btn btn--accent" onClick={handleTension}
+                  disabled={!activePath || !activeAnchor || applying}
+                  style={{ background: 'var(--c-bass)' }}>
+            {applying ? '…' : 'Tension manifold'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: 11 }}>
+          <span className="label">tension</span>
+          <input type="range" className="slider" style={{ width: 120 }}
+                 min={0.1} max={1.0} step={0.1} value={tensionVal}
+                 onChange={e => setTensionVal(Number(e.target.value))} />
+          <span className="mono">{tensionVal.toFixed(1)}</span>
+        </div>
       </div>
     )
   }
@@ -219,11 +257,22 @@ export const DiffPreview: React.FC = () => {
           <div className="label">max Δ</div>
         </div>
         <div ref={histRef} style={{ flex: 1, minWidth: 0 }} />
-        <button className="btn" onClick={handlePropose}
-                disabled={!activePath || !summary || applying}
-                style={{ marginLeft: 'auto', flexShrink: 0 }}>
-          {applying ? '…' : '↻ Přepočítat'}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-2)', flexShrink: 0, alignItems: 'center' }}>
+          <span className="label">tension</span>
+          <input type="range" className="slider" style={{ width: 80 }}
+                 min={0.1} max={1.0} step={0.1} value={tensionVal}
+                 onChange={e => setTensionVal(Number(e.target.value))} />
+          <span className="mono" style={{ fontSize: 10 }}>{tensionVal.toFixed(1)}</span>
+          <button className="btn" onClick={handleTension}
+                  disabled={!activePath || !activeAnchor || applying}
+                  style={{ background: 'var(--c-bass)', color: '#fff' }}>
+            {applying ? '…' : '⊗ Tension'}
+          </button>
+          <button className="btn" onClick={handlePropose}
+                  disabled={!activePath || !summary || applying}>
+            {applying ? '…' : '↻ Fit'}
+          </button>
+        </div>
       </div>
 
       {pending.corrections.length === 0 && (

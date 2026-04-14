@@ -6,7 +6,8 @@ correction_weights:
   tau: 1.0
 icr_binary: /Users/j/Projects/icr-engine/build/bin/icr
 icr_core: AdditiveSynthesisPianoCore
-last_anchor_db: anchor-0414
+last_anchor_db: anchor-ks-grand-0414
 last_bank_path: /Users/j/Projects/icr-engine/soundbanks-additive/ks-grand-04131446-panned.json
 midi_port: IAC Driver Bus 1
 soundbank_directory: /Users/j/Projects/icr-engine/soundbanks-additive
+spline_smoothing: 1.0

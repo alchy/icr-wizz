@@ -1,0 +1,387 @@
+{
+  "name": "anchor-ks-grand-0414",
+  "description": null,
+  "created": "2026-04-14T17:49:07.195Z",
+  "modified": "2026-04-14T19:09:47.822133",
+  "instrument_hint": null,
+  "entries": [
+    {
+      "midi": 21,
+      "vel": 4,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:50.963640"
+    },
+    {
+      "midi": 21,
+      "vel": 7,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:45.806913"
+    },
+    {
+      "midi": 22,
+      "vel": 2,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:46.327725"
+    },
+    {
+      "midi": 24,
+      "vel": 7,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:39.147674"
+    },
+    {
+      "midi": 25,
+      "vel": 5,
+      "score": 5.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:00:35.589870"
+    },
+    {
+      "midi": 28,
+      "vel": 5,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:00:16.883432"
+    },
+    {
+      "midi": 29,
+      "vel": 7,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:30.633476"
+    },
+    {
+      "midi": 31,
+      "vel": 2,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:39.864102"
+    },
+    {
+      "midi": 32,
+      "vel": 5,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:00:41.220314"
+    },
+    {
+      "midi": 34,
+      "vel": 1,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:08:52.331752"
+    },
+    {
+      "midi": 35,
+      "vel": 5,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:00:46.601431"
+    },
+    {
+      "midi": 35,
+      "vel": 7,
+      "score": 8.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:23.726390"
+    },
+    {
+      "midi": 36,
+      "vel": 2,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:32.955990"
+    },
+    {
+      "midi": 37,
+      "vel": 4,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:59.081820"
+    },
+    {
+      "midi": 38,
+      "vel": 5,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:00:55.301230"
+    },
+    {
+      "midi": 41,
+      "vel": 2,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:27.660632"
+    },
+    {
+      "midi": 42,
+      "vel": 2,
+      "score": 5.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:07:31.777410"
+    },
+    {
+      "midi": 45,
+      "vel": 6,
+      "score": 8.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:09:47.813497"
+    },
+    {
+      "midi": 46,
+      "vel": 5,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:01:13.780326"
+    },
+    {
+      "midi": 47,
+      "vel": 7,
+      "score": 8.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:12.057474"
+    },
+    {
+      "midi": 48,
+      "vel": 5,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:01:46.278475"
+    },
+    {
+      "midi": 49,
+      "vel": 1,
+      "score": 5.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:08:43.924908"
+    },
+    {
+      "midi": 52,
+      "vel": 4,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:05:31.840786"
+    },
+    {
+      "midi": 52,
+      "vel": 5,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:01:52.778410"
+    },
+    {
+      "midi": 53,
+      "vel": 1,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:08:05.901060"
+    },
+    {
+      "midi": 54,
+      "vel": 5,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:01:33.120114"
+    },
+    {
+      "midi": 55,
+      "vel": 5,
+      "score": 3.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:01:43.136828"
+    },
+    {
+      "midi": 56,
+      "vel": 7,
+      "score": 1.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:04:05.840959"
+    },
+    {
+      "midi": 57,
+      "vel": 2,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:07:24.220217"
+    },
+    {
+      "midi": 58,
+      "vel": 2,
+      "score": 7.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:20.424716"
+    },
+    {
+      "midi": 61,
+      "vel": 5,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:01:57.793269"
+    },
+    {
+      "midi": 62,
+      "vel": 1,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:08:34.082817"
+    },
+    {
+      "midi": 63,
+      "vel": 4,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:05:24.965263"
+    },
+    {
+      "midi": 66,
+      "vel": 1,
+      "score": 5.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:08:27.405555"
+    },
+    {
+      "midi": 66,
+      "vel": 2,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:07:15.036776"
+    },
+    {
+      "midi": 67,
+      "vel": 1,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:07:54.531418"
+    },
+    {
+      "midi": 68,
+      "vel": 7,
+      "score": 5.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:03:51.870094"
+    },
+    {
+      "midi": 71,
+      "vel": 4,
+      "score": 1.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:05:12.943540"
+    },
+    {
+      "midi": 73,
+      "vel": 2,
+      "score": 3.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:13.612368"
+    },
+    {
+      "midi": 77,
+      "vel": 4,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:05.169815"
+    },
+    {
+      "midi": 78,
+      "vel": 5,
+      "score": 3.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:02:35.279002"
+    },
+    {
+      "midi": 80,
+      "vel": 5,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:02:40.877933"
+    },
+    {
+      "midi": 81,
+      "vel": 1,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:08:21.281392"
+    },
+    {
+      "midi": 83,
+      "vel": 2,
+      "score": 8.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:07:05.400574"
+    },
+    {
+      "midi": 84,
+      "vel": 4,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:05:55.407337"
+    },
+    {
+      "midi": 86,
+      "vel": 5,
+      "score": 5.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:02:52.863576"
+    },
+    {
+      "midi": 89,
+      "vel": 5,
+      "score": 2.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:03:00.510528"
+    },
+    {
+      "midi": 90,
+      "vel": 1,
+      "score": 3.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:07:48.459491"
+    },
+    {
+      "midi": 93,
+      "vel": 5,
+      "score": 1.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:03:11.790669"
+    },
+    {
+      "midi": 94,
+      "vel": 6,
+      "score": 3.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:09:25.178212"
+    },
+    {
+      "midi": 96,
+      "vel": 4,
+      "score": 8.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:05:48.077728"
+    },
+    {
+      "midi": 98,
+      "vel": 7,
+      "score": 6.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:03:31.212844"
+    },
+    {
+      "midi": 101,
+      "vel": 1,
+      "score": 4.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:09:09.132524"
+    },
+    {
+      "midi": 102,
+      "vel": 2,
+      "score": 3.0,
+      "note": null,
+      "timestamp": "2026-04-14T19:06:57.531795"
+    }
+  ]
+}

@@ -247,6 +247,51 @@ export const RelationView: React.FC = () => {
       })
     }
 
+    // γ_k korekce overlay — opravený průměr jako zelené diamanty
+    const gammaCorrTraces: Plotly.Data[] = []
+    if (pending && details?.gamma_k) {
+      // Sbíraj γ korekce per MIDI → Set of corrected k indices + corrected values
+      const gammaCorr: Map<number, Map<number, number>> = new Map()
+      for (const c of pending.corrections) {
+        const m = c.field.match(/^gamma_k(\d+)$/)
+        if (!m) continue
+        const ki = parseInt(m[1]) - 1  // 0-based index
+        if (!gammaCorr.has(c.midi)) gammaCorr.set(c.midi, new Map())
+        gammaCorr.get(c.midi)!.set(ki, c.corrected)
+      }
+      if (gammaCorr.size > 0) {
+        const gcX: number[] = [], gcOrigY: number[] = [], gcCorrY: number[] = []
+        const gcText: string[] = []
+        for (const midi of midis) {
+          const corrKs = gammaCorr.get(midi)
+          if (!corrKs) continue
+          const gk = details.gamma_k[midi]
+          if (!gk || gk.length === 0) continue
+          // Vypočti originální a opravený průměr
+          const origMean = gk.reduce((a, b) => a + b, 0) / gk.length
+          const corrGk = gk.map((v, i) => corrKs.has(i) ? corrKs.get(i)! : v)
+          const corrMean = corrGk.reduce((a, b) => a + b, 0) / corrGk.length
+          gcX.push(midi)
+          gcOrigY.push(origMean)
+          gcCorrY.push(corrMean)
+          gcText.push(`MIDI ${midi}: γ_mean ${origMean.toFixed(2)}→${corrMean.toFixed(2)} (${corrKs.size} parciálů)`)
+        }
+        if (gcX.length > 0) {
+          gammaCorrTraces.push(
+            { type: 'scatter', mode: 'markers',
+              x: gcX, y: gcOrigY,
+              marker: { color: C_ORIGINAL, size: 7, symbol: 'x' },
+              hoverinfo: 'skip', name: 'γ_k orig' },
+            { type: 'scatter', mode: 'markers',
+              x: gcX, y: gcCorrY, text: gcText,
+              marker: { color: C_CORR_FILL, size: 9, symbol: 'diamond', line: { color: C_CORR_LINE, width: 1 } },
+              hovertemplate: '%{text}<extra></extra>',
+              name: 'γ_k opraveno' },
+          )
+        }
+      }
+    }
+
     // -----------------------------------------------------------------------
     // Plotly subplot grid 2×2
     // -----------------------------------------------------------------------
@@ -262,6 +307,7 @@ export const RelationView: React.FC = () => {
       ...tauTraces.map(t => ({ ...t, xaxis: 'x3', yaxis: 'y3' })),
       ...tauCorrTraces.map(t => ({ ...t, xaxis: 'x3', yaxis: 'y3' })),
       ...gammaTraces.map(t => ({ ...t, xaxis: 'x4', yaxis: 'y4' })),
+      ...gammaCorrTraces.map(t => ({ ...t, xaxis: 'x4', yaxis: 'y4' })),
     ]
 
     const corrLabel = hasCorr ? ` — ${pending!.corrections.length} korekcí` : ''

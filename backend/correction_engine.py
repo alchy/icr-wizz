@@ -265,6 +265,7 @@ class CorrectionEngine:
         c = self._propose_attack_tau_correction(note, fit)
         if c:
             corrections.append(c)
+        corrections.extend(self._propose_gamma_corrections(note, fit))
         return corrections
 
     def _propose_B_correction(
@@ -390,6 +391,57 @@ class CorrectionEngine:
             original=note.attack_tau, corrected=tau_pred,
             source=CorrectionSource.VELOCITY_MODEL,
         )
+
+    def _propose_gamma_corrections(
+        self, note: NoteParams, fit: FitResult
+    ) -> list[Correction]:
+        """
+        Porovná γ_k noty s mediánem γ_k přes klávesnici (z FitResult.gamma_k).
+        Navrhne korekci pro harmoniky kde se γ_k výrazně odchyluje od trendu.
+        """
+        log = get_logger(__name__, cls="CorrectionEngine",
+                         method="_propose_gamma_corrections")
+        corrections: list[Correction] = []
+
+        note_gamma = fit.gamma_k.get(note.midi)
+        if not note_gamma or len(note_gamma) == 0:
+            return corrections
+
+        # Vypočti medián γ_k pro každý harmonický index přes všechny MIDI noty
+        import numpy as np
+        all_midis = sorted(fit.gamma_k.keys())
+        k_max = len(note_gamma)
+
+        for ki in range(k_max):
+            vals = [fit.gamma_k[m][ki] for m in all_midis
+                    if len(fit.gamma_k[m]) > ki]
+            if len(vals) < 5:
+                continue
+
+            median = float(np.median(vals))
+            mad = float(np.median([abs(v - median) for v in vals]))
+            sigma = mad * 1.4826 if mad > 0 else 1.0
+
+            orig = note_gamma[ki]
+            z_score = abs(orig - median) / max(sigma, 1e-9)
+
+            if z_score < self.outlier_threshold:
+                continue
+
+            delta_frac = abs(median - orig) / max(abs(orig), 1e-9)
+            if delta_frac * 100 < self.min_delta_pct:
+                continue
+
+            corrections.append(Correction(
+                midi=note.midi, vel=note.vel,
+                field=f"gamma_k{ki + 1}",
+                original=orig, corrected=median,
+                source=CorrectionSource.VELOCITY_MODEL,
+            ))
+            log.debug(f"gamma_k korekce  {note.note_key}  k={ki+1}  "
+                      f"orig={orig:.3f}  median={median:.3f}  z={z_score:.1f}")
+
+        return corrections
 
     # ------------------------------------------------------------------
     # Apply helpers

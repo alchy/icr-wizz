@@ -25,27 +25,39 @@ export const FileSelector: React.FC = () => {
   const { selectDb, createDb, active: activeDb, loadDatabases, databases } = useAnchorStore()
   const { setStatus } = useUiStore()
 
-  // Načti config + anchor DB při mountu
+  // Načti config, WS, anchor DB, poslední banku — v pořadí
   useEffect(() => {
-    configApi.get().then(async (cfg) => {
+    let cancelled = false;
+    (async () => {
+      // 1. WS připojení
+      await previewSocket.connect()
+      if (cancelled) return
+
+      // 2. Config
+      let cfg: Record<string, unknown> = {}
+      try { cfg = await configApi.get() } catch { /* */ }
+      if (cancelled) return
+
       const dir = cfg.soundbank_directory
       if (typeof dir === 'string' && dir && !directory) {
         setDirectory(dir)
       }
-      // Načíst poslední anchor DB
+
+      // 3. Anchor DB
       const lastAnchor = cfg.last_anchor_db
       if (typeof lastAnchor === 'string' && lastAnchor) {
         await selectDb(lastAnchor).catch(() => {})
       }
-      // Automaticky otevřít poslední banku
+      if (cancelled) return
+
+      // 4. Poslední banka
       const lastBank = cfg.last_bank_path
       if (typeof lastBank === 'string' && lastBank) {
         handleLoad(lastBank)
       }
-    }).catch(() => {})
+    })()
     loadDatabases().catch(() => {})
-    previewSocket.connect()
-    return () => previewSocket.disconnect()
+    return () => { cancelled = true; previewSocket.disconnect() }
   }, [loadDatabases])
 
   // List souborů v adresáři
@@ -74,16 +86,18 @@ export const FileSelector: React.FC = () => {
       addTabs(newTabs)
       if (newTabs[0]) {
         setActiveTab(newTabs[0].path)
+        // Čti aktuální anchor DB ze store (ne ze stale closure)
+        const currentAnchorName = useAnchorStore.getState().active?.name ?? undefined
         // Initial fit + details
         setStatus('Spouštím analýzu…')
-        await runFit(newTabs[0].path, activeDb?.name)
-        fetchDetails(newTabs[0].path, activeDb?.name)
+        await runFit(newTabs[0].path, currentAnchorName)
+        fetchDetails(newTabs[0].path, currentAnchorName)
         // WS init
         previewSocket.send({
           action: 'init',
           payload: {
             bank_path:      newTabs[0].path,
-            anchor_db_name: activeDb?.name ?? null,
+            anchor_db_name: currentAnchorName ?? null,
           },
         })
         setStatus(`Banka načtena: ${newTabs[0].state.instrument_name || newTabs[0].state.source_path.split('/').pop()}`)

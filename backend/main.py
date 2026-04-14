@@ -579,14 +579,19 @@ async def preview_websocket(websocket: WebSocket):
                 await websocket.send_text(WsResponse(error=f"Neplatna zprava: {e}").model_dump_json())
                 continue
             try:
+                # update_anchor a init potřebují refit — delší timeout
+                timeout = 30.0 if msg.action in ("update_anchor", "init") else 0.100
                 resp = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
                         _API_EXECUTOR, lambda m=msg: _ws_handle(m, session)
                     ),
-                    timeout=0.100,
+                    timeout=timeout,
                 )
             except asyncio.TimeoutError:
-                resp = WsResponse(error="Timeout > 100ms")
+                resp = WsResponse(error=f"Timeout > {timeout}s")
+            n_scores = len(resp.outlier_scores)
+            n_per_vel = len(resp.outlier_scores_per_vel)
+            log.info(f"WS → {msg.action}  scores={n_scores}  per_vel={n_per_vel}  err={resp.error}")
             await websocket.send_text(resp.model_dump_json())
     except WebSocketDisconnect:
         log.info("WS odpojeno")
@@ -649,7 +654,7 @@ def _ws_handle(msg: WsMessage, session: dict) -> WsResponse:
                 try:    db = mgr.load(db_name)
                 except: db = None
         session["anchor_db"] = db
-        qf = RelationFitter(plugins=[BCurveFitter(), VelocityModelFitter()], sigma_threshold=2.5)
+        qf = RelationFitter(sigma_threshold=2.5)  # plný fit — všechny 4 pluginy
         try:
             fit = qf.fit_all(bank, db)
             session["last_fit"] = fit

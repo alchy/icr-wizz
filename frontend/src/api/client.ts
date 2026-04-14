@@ -239,37 +239,48 @@ export class PreviewSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 1000
   private _connected = false
+  private _openResolve: (() => void) | null = null
+  private _lastInit: WsMessage | null = null
 
   get connected() { return this._connected }
 
-  connect() {
-    const wsBase = window.location.origin.replace(/^http/, 'ws')
-    this.ws = new WebSocket(`${wsBase}/api/ws/preview`)
+  /** Připojí WS. Vrátí Promise která se vyřeší po otevření. */
+  connect(): Promise<void> {
+    return new Promise((resolve) => {
+      this._openResolve = resolve
+      const wsBase = window.location.origin.replace(/^http/, 'ws')
+      this.ws = new WebSocket(`${wsBase}/api/ws/preview`)
 
-    this.ws.onopen = () => {
-      this._connected = true
-      this.reconnectDelay = 1000
-    }
+      this.ws.onopen = () => {
+        this._connected = true
+        this.reconnectDelay = 1000
+        this._openResolve?.()
+        this._openResolve = null
+        // Re-send init po reconnectu
+        if (this._lastInit) {
+          this.ws!.send(JSON.stringify(this._lastInit))
+        }
+      }
 
-    this.ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data) as WsResponse
-        this.handlers.forEach(h => h(data))
-      } catch { /* ignore parse error */ }
-    }
+      this.ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data) as WsResponse
+          this.handlers.forEach(h => h(data))
+        } catch { /* ignore parse error */ }
+      }
 
-    this.ws.onerror = (ev) => {
-      this.errorHandlers.forEach(h => h(ev))
-    }
+      this.ws.onerror = (ev) => {
+        this.errorHandlers.forEach(h => h(ev))
+      }
 
-    this.ws.onclose = () => {
-      this._connected = false
-      // Exponential backoff reconnect
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 10000)
-        this.connect()
-      }, this.reconnectDelay)
-    }
+      this.ws.onclose = () => {
+        this._connected = false
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 10000)
+          this.connect()
+        }, this.reconnectDelay)
+      }
+    })
   }
 
   disconnect() {
@@ -279,6 +290,7 @@ export class PreviewSocket {
   }
 
   send(msg: WsMessage) {
+    if (msg.action === 'init') this._lastInit = msg
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
     }

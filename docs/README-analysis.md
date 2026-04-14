@@ -164,8 +164,14 @@ Systém hledá nízkorozměrný podprostor v prostoru parametrů odpovídající
 
 Editor umožňuje:
 1. **Identifikovat manifold** z anchor tónů (kde je uživatel přesvědčen o správnosti)
-2. **Projektovat ostatní noty** na manifold (opravit anomálie)
-3. **Interpolovat** nové noty podél manifoldu (spline extrapolace ve fyzikálních parametrech)
+2. **Interpolovat cílový vektor** pro non-anchor noty z anchor pozic v (midi, vel) prostoru
+3. **Blendovat** originální a cílový vektor s nastavitelnou tenzí
+
+Dvě implementace manifoldu:
+- **TensionManifold:** IDW interpolace přímo v parametrovém prostoru. Každý parametr se interpoluje nezávisle — jednoduché, ale nerespektuje korelace mezi parametry.
+- **PCA Manifold:** interpolace v PCA latentním prostoru. Anchor vektory se zakódují do PCA koeficientů, ty se interpolují z anchor pozic, a dekódují zpět. Výsledek zachovává korelační strukturu: parametry se mění koordinovaně podle vztahů pozorovaných u anchorů.
+
+Klíčový princip: **interpolace, ne projekce.** PCA se nepoužívá k projekci neznámého vektoru na subspace (to selhává pro body daleko od manifoldu), ale k interpolaci anchor koeficientů na pozici (midi, vel) dané noty. Výsledek je vždy konvexní kombinace anchor bodů na manifoldu.
 
 ---
 
@@ -188,18 +194,26 @@ kde `z(x)` je MAD-sigma z-score normalizovaný na [0, 1]. Výsledné skóre `0.0
 
 Váhy vyjadřují důvěryhodnost každého zdroje: B-curve a damping law jsou fyzikálně nejsilnější constrainty (každý 30 %), spektrální tvar je méně deterministický (25 %), velocity model má nejvyšší inherentní variance (15 %).
 
-### Jak CorrectionEngine rozhoduje co opravit
+### Tři korekční metody
 
-`propose()` iteruje přes outlier noty (`outlier_score > threshold / 5.0` po normalizaci) a per nota navrhuje korekce těmito pravidly:
+Systém nabízí tři nezávislé korekční pipeline. Každá produkuje `CorrectionSet`, uživatel vybírá korekce v DiffPreview.
+
+**1. CorrectionEngine (fit-based)** — opravuje outlier noty na základě fyzikálních modelů z FitResult:
 
 | Parametr | Podmínka opravy | Zdroj korekce |
 |----------|----------------|--------------|
-| `B` | `\|B_residual\| > 2.5 MAD-sigma` | `BCurveParams.predict_B(midi)` |
-| `tau1_k{n}` | parciál je outlier v damping law fitu | `DampingParams.predict_tau(f_k)` |
-| `tau2_k{n}` | tau2 opraveno jako `tau1_corrected × cluster_median_ratio` | medián τ2/τ1 pro daný register |
-| `attack_tau` | extrahovaná hodnota > `0.10s` nebo > 2σ od fitted trendu | `VelocityModelFitter.predict_attack_tau()` |
+| `B` | residuál > threshold od B-curve | `10^(α·log10(f0)+β)` |
+| `tau1_k{n}` | \|orig − spline\| / spline > 20% | cross-keyboard spline (fallback: damping law) |
+| `tau2_k{n}` | odvozeno z tau1 | zachovat poměr τ2/τ1 z originálu |
+| `attack_tau` | > 0.10s strop nebo > 2σ od trendu | power-law velocity model |
+| `gamma_k{n}` | z-score > threshold od keyboard mediánu | medián γ_k přes MIDI |
+| `beat_hz_k{n}` | z-score > threshold od keyboard mediánu | medián beat_hz per k |
 
-`A0` se nikdy neopravuje přes `CorrectionEngine` — to by změnilo barvu tónu mimo fyzikální model.
+`A0` se neopravuje přes CorrectionEngine — to je záležitost manifold metod.
+
+**2. TensionManifold (anchor IDW)** — interpoluje „ideální" parametrový vektor z nejbližších anchor not. Koriguje všechny parametry (B, τ, A0, a1, beat_hz...) na základě vážené blízkosti v (midi, vel) prostoru. Omezení: interpoluje per-parametr nezávisle, nerespektuje korelace.
+
+**3. PCA Manifold (anchor interpolace v latentním prostoru)** — fituje PCA na anchor vektory, interpoluje PCA koeficienty z anchor pozic v (midi, vel) prostoru, dekóduje zpět. Zachovává korelační strukturu: parametry se mění koordinovaně (např. B a tau1 spolu). Koriguje všechny parametry včetně A0.
 
 ### Proč fit probíhá per-nota, ne per-parametr globálně
 
@@ -224,3 +238,5 @@ Váha `0.1` (ne `0.0`) pro score 0 je záměrné. Nota s score 0 přispívá do 
 | attack_tau fit | Power-law z vel 4–7 + clamp | `scipy.optimize.curve_fit` | ThreadPool per-nota |
 | Spline editace | Cubic spline s pevnými uzly | `scipy.interpolate.CubicSpline` | — (interaktivní, ~1ms) |
 | Outlier agregace | Vážený součet z-score | `numpy` vektorizace | — (352 hodnot) |
+| Tension manifold | IDW anchor interpolace v param prostoru | `numpy`, `math` | — (sekvenční) |
+| PCA manifold | SVD + IDW interpolace v latentním prostoru | `numpy.linalg.svd` | — (sekvenční) |

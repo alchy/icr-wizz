@@ -9,8 +9,6 @@ Paralelizace:
 
 Nikdy nemodifikuje originální BankState in-place.
 
-Status: scaffold s loggingem a paralelizací — implementace TODO
-
 Changelog:
   2025-04-14 v0.1  — initial scaffold
   2025-04-14 v0.2  — logging integrace, ThreadPool skeleton v propose()
@@ -19,6 +17,7 @@ Changelog:
   2025-04-14 v0.5  — IMPLEMENTOVÁNO: _propose_B_correction, _propose_tau_corrections,
                      _propose_attack_tau_correction, _apply_to_note, _diff_note
   2025-04-14 v0.6  — midi_to_f0 helper, inline math imports → top-level
+  2026-04-14 v0.7  — gamma_k + beating korekce, spline tau fáze 2, correction_weights
 """
 
 from __future__ import annotations
@@ -107,8 +106,6 @@ class CorrectionEngine:
 
         Paralelizace: ThreadPoolExecutor — per-nota korekce jsou
         nezávislé operace bez sdíleného stavu.
-
-        TODO: implementovat — skeleton s paralelizací je hotov
         """
         with OperationLogger(
             self._log, "propose",
@@ -228,8 +225,6 @@ class CorrectionEngine:
 
         Sekvenční — deep copy + field patch je rychlý (~5ms pro 704 not).
         Paralelizace by přinesla pickling overhead bez reálného zisku.
-
-        TODO: implementovat
         """
         with OperationLogger(
             self._log, "apply",
@@ -273,7 +268,7 @@ class CorrectionEngine:
         """
         Vrátí diff jako CorrectionSet pro DiffPreview.
 
-        TODO: implementovat porovnání numerických polí
+        Porovnává B, attack_tau, tau1/tau2/A0 per parciál.
         """
         with OperationLogger(
             self._log, "diff",
@@ -305,9 +300,7 @@ class CorrectionEngine:
     ) -> list[Correction]:
         """
         Navrhne všechny korekce pro jednu notu.
-        Agreguje B, tau a attack_tau návrhy.
-
-        TODO: implementovat
+        Agreguje B, tau, attack_tau, gamma_k a beating návrhy.
         """
         corrections = []
         c = self._propose_B_correction(note, fit)
@@ -530,7 +523,7 @@ class CorrectionEngine:
                 midi=note.midi, vel=note.vel,
                 field=f"gamma_k{ki + 1}",
                 original=orig, corrected=median,
-                source=CorrectionSource.VELOCITY_MODEL,
+                source=CorrectionSource.SPECTRAL_SHAPE,
             ))
             log.debug(f"gamma_k korekce  {note.note_key}  k={ki+1}  "
                       f"orig={orig:.3f}  median={median:.3f}  z={z_score:.1f}")

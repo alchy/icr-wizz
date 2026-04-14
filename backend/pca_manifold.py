@@ -3,17 +3,18 @@ pca_manifold.py — PCA-based manifold korekce parametrů
 
 Anchor noty definují manifold v parametrovém prostoru.
 PCA redukuje dimenzionalitu, zachovává korelace mezi parametry.
-Non-anchor noty se projektují na manifold a korigují.
+Non-anchor noty se korigují interpolací v PCA latentním prostoru
+na základě blízkosti v (midi, vel) prostoru.
 
 Pipeline:
-  1. Extrahuj parametrové vektory z anchor not
+  1. Extrahuj parametrové vektory z anchor not (log prostor)
   2. Normalizuj (z-score per parametr)
   3. PCA → zachovej n_components hlavních komponent
-  4. Pro každou non-anchor notu:
-     a. Normalizuj její vektor
-     b. Projektuj do PCA prostoru (encode)
-     c. Zpětná projekce (decode) = manifold-cleaned vektor
-     d. corrected = original + tension × (cleaned - original)
+  4. Zakóduj anchor vektory → uložit (midi, vel) → koeficienty
+  5. Pro každou non-anchor notu:
+     a. Interpoluj PCA koeficienty z anchorů (IDW v midi/vel)
+     b. Dekóduj → cílový parametrový vektor
+     c. corrected = original + tension × (target - original)
 """
 
 from __future__ import annotations
@@ -36,6 +37,10 @@ PARTIAL_PARAMS = ["A0", "tau1", "tau2", "a1", "beat_hz"]
 
 # Parametry které se transformují do log prostoru (striktně kladné, multiplikativní)
 LOG_PARAMS = {"B", "rms_gain", "attack_tau", "A_noise", "A0", "tau1", "tau2"}
+
+# Metrika vzdálenosti: 1 oktáva (12 půltónů) ≈ 1 velocity krok
+_MIDI_SCALE = 12.0
+
 
 def _to_log(key: str, val: float) -> float:
     """Transformuj do log prostoru pokud parametr je logaritmický."""
@@ -81,7 +86,7 @@ def _build_param_keys(k_max: int) -> list[str]:
 
 
 class PCACorrector:
-    """PCA manifold korekce."""
+    """PCA manifold korekce s interpolací v latentním prostoru."""
 
     def __init__(
         self,
@@ -103,8 +108,9 @@ class PCACorrector:
         self._std: Optional[np.ndarray] = None
         self._components: Optional[np.ndarray] = None  # (n_comp, n_features)
         self._n_comp: int = 0
-        self._data_min: Optional[np.ndarray] = None
-        self._data_max: Optional[np.ndarray] = None
+        # Anchor pozice a jejich PCA koeficienty
+        self._anchor_positions: list[tuple[int, int]] = []   # (midi, vel)
+        self._anchor_coeffs: Optional[np.ndarray] = None     # (n_anchors, n_comp)
 
     def fit(self, bank: BankState, anchor_db: AnchorDatabase) -> dict:
         """
@@ -126,7 +132,8 @@ class PCACorrector:
                 else:
                     anchor_set.add((e.midi, e.vel))
 
-            # Extrahuj vektory z anchor not
+            # Extrahuj vektory z anchor not — zachovej pozice
+            positions: list[tuple[int, int]] = []
             vectors: list[np.ndarray] = []
             for midi, vel in sorted(anchor_set):
                 note = bank.get_note(midi, vel)
@@ -134,6 +141,7 @@ class PCACorrector:
                     continue
                 vec = _note_to_vector(note, self.k_max, self.param_keys)
                 vectors.append(np.array([_to_log(k, vec.get(k, 0.0)) for k in self.param_keys]))
+                positions.append((midi, vel))
 
             if len(vectors) < 5:
                 op.warn("nedostatek anchor not pro PCA", count=len(vectors))
@@ -163,9 +171,9 @@ class PCACorrector:
 
             self._components = Vt[:self._n_comp]  # (n_comp, n_features)
 
-            # Rozsah anchor dat v log prostoru (pro clamp projekce)
-            self._data_min = X.min(axis=0) - self._std  # ± 1 std tolerance
-            self._data_max = X.max(axis=0) + self._std
+            # Zakóduj anchor vektory do latentního prostoru
+            self._anchor_coeffs = X_norm @ self._components.T  # (n_anchors, n_comp)
+            self._anchor_positions = positions
 
             variance_kept = float(cumulative[self._n_comp - 1]) if self._n_comp <= len(cumulative) else 1.0
 
@@ -182,19 +190,32 @@ class PCACorrector:
                 "variance_kept": variance_kept,
             }
 
-    def project(self, vec_log: np.ndarray) -> np.ndarray:
-        """Projektuj vektor na PCA manifold: encode → decode.
-        Vstup i výstup v log prostoru. Clamp na anchor rozsah."""
-        if self._mean is None or self._components is None:
-            return vec_log
-        normalized = (vec_log - self._mean) / self._std
-        encoded = normalized @ self._components.T  # (n_comp,)
-        decoded = encoded @ self._components       # (n_features,)
-        result = decoded * self._std + self._mean
-        # Clamp na rozsah anchor dat (± 1 std pro toleranci)
-        if self._data_min is not None:
-            result = np.clip(result, self._data_min, self._data_max)
-        return result
+    def interpolate(self, midi: int, vel: int) -> np.ndarray:
+        """Interpoluj cílový vektor z anchor koeficientů v PCA latentním prostoru.
+
+        IDW (inverse-distance weighting) v (midi, vel) prostoru.
+        Výsledek je vážený průměr anchor PCA koeficientů → decode → log-space vektor.
+        Garantuje, že výsledek leží uvnitř konvexního obalu anchorů na manifoldu.
+        """
+        # Vzdálenosti ke všem anchorům: d² = (Δmidi/12)² + (Δvel)²
+        dists_sq = np.array([
+            ((midi - am) / _MIDI_SCALE) ** 2 + (vel - av) ** 2
+            for am, av in self._anchor_positions
+        ])
+
+        # Přesná shoda → vrať přímo anchor koeficienty
+        exact = np.where(dists_sq < 1e-10)[0]
+        if len(exact) > 0:
+            coeffs = self._anchor_coeffs[exact[0]]
+        else:
+            # IDW p=2: w_i = 1 / d_i²
+            weights = 1.0 / dists_sq
+            weights /= weights.sum()
+            coeffs = weights @ self._anchor_coeffs  # (n_comp,)
+
+        # Decode z PCA latentního prostoru do log prostoru
+        decoded = coeffs @ self._components          # (n_features,)
+        return decoded * self._std + self._mean
 
     def propose(self, bank: BankState, anchor_db: AnchorDatabase) -> CorrectionSet:
         """
@@ -230,11 +251,11 @@ class PCACorrector:
                 orig_dict = _note_to_vector(note, self.k_max, self.param_keys)
                 orig_linear = np.array([orig_dict.get(k, 0.0) for k in self.param_keys])
 
-                # Log transformace pro PCA
+                # Log transformace
                 orig_log = np.array([_to_log(k, orig_dict.get(k, 0.0)) for k in self.param_keys])
 
-                # Projekce na manifold (v log prostoru)
-                proj_log = self.project(orig_log)
+                # Interpolovaný cílový vektor z anchor manifoldu (v log prostoru)
+                target_log = self.interpolate(note.midi, note.vel)
 
                 # Generuj korekce per parametr
                 for i, key in enumerate(self.param_keys):
@@ -243,18 +264,17 @@ class PCACorrector:
 
                     if base in LOG_PARAMS and orig_val > 0:
                         # Tension blend v LOG prostoru (geometrický průměr)
-                        # corrected = orig^(1-t) * projected^t
                         log_o = orig_log[i]
-                        log_p = proj_log[i]
-                        log_c = log_o + self.tension * (log_p - log_o)
+                        log_t = target_log[i]
+                        log_c = log_o + self.tension * (log_t - log_o)
                         corrected = float(np.exp(log_c))
                     else:
                         # Lineární blend pro non-log parametry (a1, beat_hz)
-                        proj_val = _from_log(key, proj_log[i])
-                        corrected = orig_val + self.tension * (proj_val - orig_val)
+                        target_val = _from_log(key, target_log[i])
+                        corrected = orig_val + self.tension * (target_val - orig_val)
 
                     # Delta
-                    denom = max(abs(orig_val), abs(proj_val), 1e-15)
+                    denom = max(abs(orig_val), abs(corrected), 1e-15)
                     delta_pct = (corrected - orig_val) / denom * 100
 
                     if abs(delta_pct) < self.min_delta_pct:

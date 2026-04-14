@@ -115,28 +115,36 @@ export const NoteDetail: React.FC = () => {
       }
     })
 
-    // Correction overlay: zelené trojúhelníky dole pro parciály s tau korekcí
+    // Correction overlay: trojúhelníky s výškou dle míry korekce
     const corrPartials: number[] = []
     if (corrMap.size > 0) {
-      const corrK: number[] = [], corrText: string[] = []
+      const corrK: number[] = [], corrY: number[] = [], corrText: string[] = []
+      const corrSizes: number[] = [], corrColors: string[] = []
       for (const [field, c] of corrMap) {
-        const m = field.match(/^tau[12]_k(\d+)$/)
+        const m = field.match(/^(tau[12]|A0|a1|beat_hz)_k(\d+)$/)
         if (!m) continue
-        const k = parseInt(m[1])
+        const k = parseInt(m[2])
         if (corrPartials.includes(k)) continue
         corrPartials.push(k)
         corrK.push(k)
-        corrText.push(`k=${k}: ${c.field} ${c.original.toFixed(3)}→${c.corrected.toFixed(3)}s (${c.delta_pct.toFixed(1)}%)`)
+        // Y pozice = clamp delta do rozsahu grafu (-50 až 0)
+        const absDelta = Math.min(Math.abs(c.delta_pct), 200)
+        corrY.push(-absDelta / 4)  // -50 max, 0 min
+        // Velikost markeru úměrná delta
+        corrSizes.push(Math.max(5, Math.min(16, absDelta / 10)))
+        // Barva: zelená pro malé, oranžová pro střední, červená pro velké
+        corrColors.push(absDelta < 20 ? C_CORR_LINE : absDelta < 80 ? '#BA7517' : '#E24B4A')
+        corrText.push(`k=${k}: ${c.field} ${c.original.toPrecision(4)}→${c.corrected.toPrecision(4)} (${c.delta_pct.toFixed(1)}%)`)
       }
       if (corrK.length > 0) {
-        // Zelené trojúhelníky na spodní hraně grafu
         traces.push({
           type: 'scatter', mode: 'markers',
-          x: corrK, y: corrK.map(() => -45),
-          marker: { color: C_CORR_LINE, size: 10, symbol: 'triangle-up' },
+          x: corrK, y: corrY,
+          marker: { color: corrColors, size: corrSizes, symbol: 'triangle-up',
+                    line: { color: C_CORR_LINE, width: 1 } },
           hovertemplate: '%{text}<extra></extra>',
           text: corrText,
-          name: '◇ korekce τ',
+          name: '◇ korekce',
         })
       }
     }

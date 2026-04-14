@@ -26,6 +26,7 @@ export const VelocityEditor: React.FC = () => {
 
   const [draggedGamma, setDraggedGamma] = useState<number[]>([])
   const [selectedK, setSelectedK]       = useState(1)
+  const gammaRef = useRef<number[]>([])  // mutable ref pro drag (bez re-render)
 
   // Inicializace γ_k z fit details
   const originalGamma = selectedMidi !== null
@@ -33,18 +34,30 @@ export const VelocityEditor: React.FC = () => {
     : []
 
   useEffect(() => {
-    if (originalGamma.length > 0) setDraggedGamma([...originalGamma])
+    if (originalGamma.length > 0) {
+      const copy = [...originalGamma]
+      setDraggedGamma(copy)
+      gammaRef.current = copy
+    }
   }, [selectedMidi, details])
 
+  // Sync ref při state změnách (reset tlačítko apod.)
+  useEffect(() => {
+    gammaRef.current = draggedGamma
+  }, [draggedGamma])
+
   // ---------------------------------------------------------------------------
-  // D3 γ_k spline editor
+  // D3 γ_k spline editor — renderuje se jen při změně noty/k, ne při dragu
   // ---------------------------------------------------------------------------
+  const renderKey = `${selectedMidi}_${selectedK}_${draggedGamma.length}`
+
   useEffect(() => {
     const svg = d3.select(svgRef.current!)
     svg.selectAll('*').remove()
-    if (draggedGamma.length === 0) return
+    if (gammaRef.current.length === 0) return
 
-    const kMax = draggedGamma.length
+    const gamma = gammaRef.current
+    const kMax = gamma.length
     const xScale = d3.scaleLinear().domain([1, kMax]).range([0, IW])
     const yScale = d3.scaleLinear().domain([0, 4]).range([IH, 0])
 
@@ -80,7 +93,7 @@ export const VelocityEditor: React.FC = () => {
       .curve(d3.curveCatmullRom.alpha(0.5))
 
     const path = g.append('path')
-      .datum(draggedGamma)
+      .datum(gamma)
       .attr('fill', 'none')
       .attr('stroke', '#BA7517')
       .attr('stroke-width', 2)
@@ -93,20 +106,16 @@ export const VelocityEditor: React.FC = () => {
       .attr('stroke', 'var(--c-anchor)').attr('stroke-width', 1)
       .attr('stroke-dasharray', '2,2').attr('opacity', 0.6)
 
-    // Draggable uzlové body (každý 3. k pro přehlednost)
+    // Draggable uzlové body (každý 5. k pro přehlednost)
     const nodeKs = [1, ...Array.from({ length: Math.floor(kMax / 5) }, (_, i) => (i + 1) * 5), kMax]
       .filter(k => k <= kMax)
-
-    const updatePath = (newGamma: number[]) => {
-      path.datum(newGamma).attr('d', line)
-    }
 
     nodeKs.forEach(k => {
       const ix = k - 1
       const node = g.append('circle')
         .attr('cx', xScale(k))
-        .attr('cy', yScale(draggedGamma[ix] ?? 1))
-        .attr('r', 5)
+        .attr('cy', yScale(gamma[ix] ?? 1))
+        .attr('r', 6)
         .attr('fill', '#BA7517')
         .attr('stroke', '#1a1a1a').attr('stroke-width', 1.5)
         .attr('cursor', 'ns-resize')
@@ -114,27 +123,30 @@ export const VelocityEditor: React.FC = () => {
       node.call(
         d3.drag<SVGCircleElement, unknown>()
           .on('drag', function(event: d3.D3DragEvent<SVGCircleElement, unknown, unknown>) {
-            const newGammaVal = Math.max(0.05, Math.min(4.0, yScale.invert(event.y)))
-            setDraggedGamma(prev => {
-              const next = [...prev]
-              next[ix] = newGammaVal
-              // Interpolace okolních hodnot
-              return next
-            })
-            d3.select(this).attr('cy', yScale(newGammaVal))
-            updatePath(draggedGamma)
+            // event.y je relativní k <g> díky D3 drag kontejneru
+            const localY = event.y
+            const val = Math.max(0.05, Math.min(4.0, yScale.invert(localY)))
+            // Aktualizuj ref přímo (žádný re-render)
+            gammaRef.current[ix] = val
+            // Aktualizuj vizuál
+            d3.select(this).attr('cy', yScale(val))
+            path.datum([...gammaRef.current]).attr('d', line)
             // WS preview
             if (selectedMidi !== null) {
               previewSocket.send({
                 action: 'drag_gamma_k',
-                payload: { midi: selectedMidi, k, gamma: newGammaVal },
+                payload: { midi: selectedMidi, k, gamma: val },
               })
             }
+          })
+          .on('end', function() {
+            // Po dokončení dragu sync state
+            setDraggedGamma([...gammaRef.current])
           })
       )
     })
 
-  }, [draggedGamma, selectedK, selectedMidi])
+  }, [renderKey, selectedMidi])
 
   // ---------------------------------------------------------------------------
   // Render

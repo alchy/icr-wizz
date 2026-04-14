@@ -56,16 +56,20 @@ export const NoteDetail: React.FC = () => {
   const [notes, setNotes] = useState<NoteParams[]>([])
   const [activeK, setActiveK] = useState<number>(1)
 
-  // Index korekcí pro vybranou notu: field → Correction (per vel, bereme selectedVel)
+  // Index korekcí pro vybranou notu: field → Correction
+  // Preferujeme selectedVel, fallback na jakoukoli vel s max |delta|
   const selectedVel = useUiStore(s => s.selectedVel)
   const corrMap = React.useMemo(() => {
     const map = new Map<string, Correction>()
     if (!pending || selectedMidi === null) return map
     for (const c of pending.corrections) {
       if (c.midi !== selectedMidi) continue
-      // Pro každý field bereme korekci pro selectedVel, nebo jakoukoli
       const existing = map.get(c.field)
-      if (!existing || c.vel === selectedVel) {
+      if (!existing) {
+        map.set(c.field, c)
+      } else if (c.vel === selectedVel && existing.vel !== selectedVel) {
+        map.set(c.field, c)
+      } else if (c.vel === selectedVel && existing.vel === selectedVel && Math.abs(c.delta_pct) > Math.abs(existing.delta_pct)) {
         map.set(c.field, c)
       }
     }
@@ -109,26 +113,28 @@ export const NoteDetail: React.FC = () => {
       }
     })
 
-    // Correction overlay: opravené tau jako zelené diamanty
+    // Correction overlay: zelené trojúhelníky dole pro parciály s tau korekcí
+    const corrPartials: number[] = []
     if (corrMap.size > 0) {
-      const corrK: number[] = [], corrY: number[] = [], corrText: string[] = []
+      const corrK: number[] = [], corrText: string[] = []
       for (const [field, c] of corrMap) {
-        const m = field.match(/^tau1_k(\d+)$/)
+        const m = field.match(/^tau[12]_k(\d+)$/)
         if (!m) continue
         const k = parseInt(m[1])
-        // Zobraz delta jako marker na ose k
+        if (corrPartials.includes(k)) continue
+        corrPartials.push(k)
         corrK.push(k)
-        corrY.push(0)  // na referenční úrovni
-        corrText.push(`k=${k} τ1: ${c.original.toFixed(3)}→${c.corrected.toFixed(3)}s (${c.delta_pct.toFixed(1)}%)`)
+        corrText.push(`k=${k}: ${c.field} ${c.original.toFixed(3)}→${c.corrected.toFixed(3)}s (${c.delta_pct.toFixed(1)}%)`)
       }
       if (corrK.length > 0) {
+        // Zelené trojúhelníky na spodní hraně grafu
         traces.push({
           type: 'scatter', mode: 'markers',
-          x: corrK, y: corrY,
-          marker: { color: C_CORR_FILL, size: 12, symbol: 'diamond-open', line: { color: C_CORR_LINE, width: 2 } },
+          x: corrK, y: corrK.map(() => -45),
+          marker: { color: C_CORR_LINE, size: 10, symbol: 'triangle-up' },
           hovertemplate: '%{text}<extra></extra>',
           text: corrText,
-          name: 'korekce τ1',
+          name: 'korekce τ',
         })
       }
     }
@@ -141,11 +147,19 @@ export const NoteDetail: React.FC = () => {
       hoverinfo: 'skip',
     })
 
+    // B korekce anotace
+    const bCorr = corrMap.get('B')
+    const corrCount = corrMap.size
+    let titleSuffix = ''
+    if (bCorr) titleSuffix += `  B: ${bCorr.original.toExponential(2)}→${bCorr.corrected.toExponential(2)}`
+    if (corrCount > 0) titleSuffix += `  [${corrCount} korekcí]`
+
     const layout: Partial<Plotly.Layout> = {
       ...LAYOUT_BASE,
       height: 160,
       barmode: 'overlay',
-      title: { text: `k harmonik — MIDI ${selectedMidi} ${selectedMidi !== null ? midiToNoteName(selectedMidi) : ''}`, font: { size: 10 } },
+      title: { text: `k harmonik — ${selectedMidi !== null ? midiToNoteName(selectedMidi) : ''} MIDI ${selectedMidi}${titleSuffix}`,
+               font: { size: 10, color: corrCount > 0 ? C_CORR_LINE : '#9B9892' } },
       xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'k', font: { size: 9 } }, dtick: 5 },
       yaxis: { ...LAYOUT_BASE.yaxis, title: { text: 'A0(k)/A0(1) [dB]', font: { size: 9 } } },
     }

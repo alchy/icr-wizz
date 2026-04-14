@@ -103,6 +103,7 @@ export const DiffPreview: React.FC = () => {
   const { propose } = useCorrectionStore()
   const activeAnchor = useAnchorStore(s => s.active)
   const [tensionVal, setTensionVal] = useState(0.5)
+  const [rbfKernel, setRbfKernel] = useState('thin_plate_spline')
 
   async function handlePropose() {
     if (!activePath || !summary) return
@@ -161,10 +162,10 @@ export const DiffPreview: React.FC = () => {
   async function handleRBF() {
     if (!activePath) return
     setApplying(true)
-    setStatus(`RBF surface (${tensionVal})…`)
+    setStatus(`RBF ${rbfKernel} (${tensionVal})…`)
     try {
       const cs = await correctionsApi.rbf(
-        activePath, activeAnchor?.name, tensionVal)
+        activePath, activeAnchor?.name, tensionVal, rbfKernel)
       useCorrectionStore.setState({
         pending: cs,
         selected: new Set(cs.corrections.map(
@@ -204,6 +205,15 @@ export const DiffPreview: React.FC = () => {
                   style={{ background: 'var(--c-mid)' }}>
             {applying ? '…' : 'RBF'}
           </button>
+          <select className="select" value={rbfKernel}
+                  onChange={e => setRbfKernel(e.target.value)}
+                  style={{ fontSize: 10, padding: '2px 4px' }}>
+            <option value="thin_plate_spline">thin plate</option>
+            <option value="multiquadric">multiquadric</option>
+            <option value="cubic">cubic</option>
+            <option value="gaussian">gaussian</option>
+            <option value="linear">linear</option>
+          </select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: 11 }}>
           <span className="label">tension</span>
@@ -240,14 +250,26 @@ export const DiffPreview: React.FC = () => {
     }
   }
 
+  function correctionSuffix(): string {
+    const desc = pending?.description ?? ''
+    if (desc.startsWith('RBF surface:')) {
+      const m = desc.match(/kernel=(\w+)/)
+      return m ? `rbf-${m[1]}` : 'rbf'
+    }
+    if (desc.startsWith('PCA manifold:')) return 'pca'
+    if (desc.startsWith('tension manifold:')) return 'tension'
+    return 'fit'
+  }
+
   async function handleExport() {
     if (!activePath) return
     const stem = activePath.split(/[/\\]/).pop()?.replace('.json', '') ?? 'bank'
-    const outName = `./exported/${stem}-corrected.json`
+    const suffix = correctionSuffix()
+    const outName = `./exported/${stem}-${suffix}.json`
     try {
       const res = await exportApi.bank(activePath, outName, diffOnly, addMeta)
       setExportedPath(res.path.split(/[/\\]/).pop() ?? res.path)
-      setStatus(`Exportováno → exported/${stem}-corrected.json`)
+      setStatus(`Exportováno → exported/${stem}-${suffix}.json`)
     } catch (e: any) {
       setStatus(`Export selhal: ${e.message}`)
     }
@@ -327,6 +349,15 @@ export const DiffPreview: React.FC = () => {
                   style={{ background: 'var(--c-mid)', color: '#fff' }}>
             {applying ? '…' : '◈ RBF'}
           </button>
+          <select className="select" value={rbfKernel}
+                  onChange={e => setRbfKernel(e.target.value)}
+                  style={{ fontSize: 9, padding: '1px 3px' }}>
+            <option value="thin_plate_spline">thin plate</option>
+            <option value="multiquadric">multiquadric</option>
+            <option value="cubic">cubic</option>
+            <option value="gaussian">gaussian</option>
+            <option value="linear">linear</option>
+          </select>
           <button className="btn" onClick={handlePropose}
                   disabled={!activePath || !summary || applying}>
             {applying ? '…' : '↻ Fit'}
@@ -378,7 +409,7 @@ export const DiffPreview: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {visible.map((c, i) => {
+            {visible.slice(0, 500).map((c, i) => {
               const sel = isSelected(c)
               return (
                 <tr
@@ -441,6 +472,12 @@ export const DiffPreview: React.FC = () => {
             })}
           </tbody>
         </table>
+        {visible.length > 500 && (
+          <div style={{ padding: '8px 12px', textAlign: 'center', fontSize: 11,
+                        color: 'var(--t-muted)', borderTop: '1px solid var(--bg-border)' }}>
+            Zobrazeno 500 / {visible.length} korekcí (seřazeno podle |Δ%|)
+          </div>
+        )}
       </div>
 
       {/* Export & Patch */}

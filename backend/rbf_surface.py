@@ -199,39 +199,46 @@ class RBFCorrector:
                 else:
                     anchor_set.add((e.midi, e.vel))
 
-            corrections: list[Correction] = []
+            # Sesbírej non-anchor noty a jejich vektory
+            query_notes: list[NoteParams] = []
+            query_positions: list[list[float]] = []
+            orig_linear_all: list[np.ndarray] = []
+            orig_log_all: list[np.ndarray] = []
 
             for note in bank.notes.values():
                 if (note.midi, note.vel) in anchor_set:
                     continue
-
-                # Originální vektor (lineární)
+                query_notes.append(note)
+                query_positions.append([note.midi / _MIDI_SCALE, note.vel])
                 orig_dict = _note_to_vector(note, self.k_max, self.param_keys)
-                orig_linear = np.array([orig_dict.get(k, 0.0) for k in self.param_keys])
+                orig_linear_all.append(np.array([orig_dict.get(k, 0.0) for k in self.param_keys]))
+                orig_log_all.append(np.array([_to_log(k, orig_dict.get(k, 0.0)) for k in self.param_keys]))
 
-                # Log transformace
-                orig_log = np.array([_to_log(k, orig_dict.get(k, 0.0)) for k in self.param_keys])
+            # Batch RBF evaluace — jeden call pro všechny noty
+            Q = np.array(query_positions)           # (M, 2)
+            targets_log = self._rbf(Q)              # (M, K)
+            op.progress("RBF evaluace", notes=len(query_notes))
 
-                # RBF surface hodnota (v log prostoru)
-                target_log = self.interpolate(note.midi, note.vel)
+            # Pre-compute log param mask
+            is_log = np.array([key.split("_k")[0] in LOG_PARAMS for key in self.param_keys])
 
-                # Generuj korekce per parametr
+            corrections: list[Correction] = []
+
+            for idx, note in enumerate(query_notes):
+                orig_linear = orig_linear_all[idx]
+                orig_log = orig_log_all[idx]
+                target_log = targets_log[idx]
+
                 for i, key in enumerate(self.param_keys):
                     orig_val = orig_linear[i]
-                    base = key.split("_k")[0]
 
-                    if base in LOG_PARAMS and orig_val > 0:
-                        # Tension blend v LOG prostoru (geometrický průměr)
-                        log_o = orig_log[i]
-                        log_t = target_log[i]
-                        log_c = log_o + self.tension * (log_t - log_o)
+                    if is_log[i] and orig_val > 0:
+                        log_c = orig_log[i] + self.tension * (target_log[i] - orig_log[i])
                         corrected = float(np.exp(log_c))
                     else:
-                        # Lineární blend pro non-log parametry
                         target_val = _from_log(key, target_log[i])
                         corrected = orig_val + self.tension * (target_val - orig_val)
 
-                    # Delta
                     denom = max(abs(orig_val), abs(corrected), 1e-15)
                     delta_pct = (corrected - orig_val) / denom * 100
 

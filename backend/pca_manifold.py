@@ -34,6 +34,23 @@ _log = get_logger(__name__, cls="PCAManifold")
 SCALAR_PARAMS = ["B", "rms_gain", "attack_tau", "A_noise", "noise_centroid_hz"]
 PARTIAL_PARAMS = ["A0", "tau1", "tau2", "a1", "beat_hz"]
 
+# Parametry které se transformují do log prostoru (striktně kladné, multiplikativní)
+LOG_PARAMS = {"B", "rms_gain", "attack_tau", "A_noise", "A0", "tau1", "tau2"}
+
+def _to_log(key: str, val: float) -> float:
+    """Transformuj do log prostoru pokud parametr je logaritmický."""
+    base = key.split("_k")[0]
+    if base in LOG_PARAMS and val > 0:
+        return np.log(val)
+    return val
+
+def _from_log(key: str, val: float) -> float:
+    """Transformuj zpět z log prostoru."""
+    base = key.split("_k")[0]
+    if base in LOG_PARAMS:
+        return float(np.exp(val))
+    return val
+
 
 def _note_to_vector(note: NoteParams, k_max: int, param_keys: list[str]) -> dict[str, float]:
     """Extrahuj parametrový vektor z noty."""
@@ -114,7 +131,7 @@ class PCACorrector:
                 if note is None:
                     continue
                 vec = _note_to_vector(note, self.k_max, self.param_keys)
-                vectors.append(np.array([vec.get(k, 0.0) for k in self.param_keys]))
+                vectors.append(np.array([_to_log(k, vec.get(k, 0.0)) for k in self.param_keys]))
 
             if len(vectors) < 5:
                 op.warn("nedostatek anchor not pro PCA", count=len(vectors))
@@ -159,11 +176,11 @@ class PCACorrector:
                 "variance_kept": variance_kept,
             }
 
-    def project(self, vec: np.ndarray) -> np.ndarray:
-        """Projektuj vektor na PCA manifold: encode → decode."""
+    def project(self, vec_log: np.ndarray) -> np.ndarray:
+        """Projektuj vektor na PCA manifold: encode → decode. Vstup i výstup v log prostoru."""
         if self._mean is None or self._components is None:
-            return vec
-        normalized = (vec - self._mean) / self._std
+            return vec_log
+        normalized = (vec_log - self._mean) / self._std
         encoded = normalized @ self._components.T  # (n_comp,)
         decoded = encoded @ self._components       # (n_features,)
         return decoded * self._std + self._mean
@@ -198,19 +215,23 @@ class PCACorrector:
                 if (note.midi, note.vel) in anchor_set:
                     continue
 
-                # Originální vektor
+                # Originální vektor (lineární)
                 orig_dict = _note_to_vector(note, self.k_max, self.param_keys)
-                orig_arr = np.array([orig_dict.get(k, 0.0) for k in self.param_keys])
+                orig_linear = np.array([orig_dict.get(k, 0.0) for k in self.param_keys])
 
-                # Projekce na manifold
-                projected = self.project(orig_arr)
+                # Log transformace pro PCA
+                orig_log = np.array([_to_log(k, orig_dict.get(k, 0.0)) for k in self.param_keys])
+
+                # Projekce na manifold (v log prostoru)
+                proj_log = self.project(orig_log)
 
                 # Generuj korekce per parametr
                 for i, key in enumerate(self.param_keys):
-                    orig_val = orig_arr[i]
-                    proj_val = projected[i]
+                    orig_val = orig_linear[i]
+                    # Zpětná transformace z log prostoru
+                    proj_val = _from_log(key, proj_log[i])
 
-                    # Tension blend
+                    # Tension blend (v lineárním prostoru)
                     corrected = orig_val + self.tension * (proj_val - orig_val)
 
                     # Delta

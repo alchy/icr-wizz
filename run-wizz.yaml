@@ -4,3 +4,11 @@ last_anchor_db: anchor-0414
 last_bank_path: /Users/j/Projects/icr-engine/soundbanks-additive/ks-grand-04131446-panned.json
 midi_port: IAC Driver Bus 1
 soundbank_directory: /Users/j/Projects/icr-engine/soundbanks-additive
+
+# Váhy korekcí per typ (0.0 = vypnuto, 1.0 = plná korekce, >1.0 = zesílení)
+correction_weights:
+  b_curve: 1.0
+  tau: 1.0
+  attack_tau: 1.0
+  gamma_k: 1.0
+  beating: 1.0

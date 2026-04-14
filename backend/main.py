@@ -94,7 +94,9 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 loader   = BankLoader()
 fitter   = RelationFitter()
-engine   = CorrectionEngine()
+engine   = CorrectionEngine(
+    correction_weights=_app_config.get("correction_weights"),
+)
 exporter = BankExporter()
 mgr      = AnchorManager(ANCHOR_DIR)
 bridge   = MidiBridge()

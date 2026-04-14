@@ -66,18 +66,30 @@ class CorrectionEngine:
     _log = get_logger(__name__, cls="CorrectionEngine")
     MIN_DELTA_PCT = 0.5
 
+    # Default correction weights per typ
+    DEFAULT_WEIGHTS = {
+        "b_curve": 1.0,
+        "tau": 1.0,
+        "attack_tau": 1.0,
+        "gamma_k": 1.0,
+        "beating": 1.0,
+    }
+
     def __init__(
         self,
         outlier_threshold: float = 2.5,
         min_delta_pct: float = MIN_DELTA_PCT,
         note_workers: int = _NOTE_WORKERS,
+        correction_weights: Optional[dict[str, float]] = None,
     ):
         self.outlier_threshold = outlier_threshold
         self.min_delta_pct     = min_delta_pct
         self.note_workers      = note_workers
+        self.weights = {**self.DEFAULT_WEIGHTS, **(correction_weights or {})}
         self._log.debug(
             f"inicializován  outlier_threshold={outlier_threshold}  "
-            f"min_delta_pct={min_delta_pct}  note_workers={note_workers}"
+            f"min_delta_pct={min_delta_pct}  note_workers={note_workers}  "
+            f"weights={self.weights}"
         )
 
     @log_operation("propose")
@@ -103,6 +115,23 @@ class CorrectionEngine:
                 "workers":            self.note_workers,
             }
         ) as op:
+            # Pre-compute beat_hz statistiky per k (pro beating korekce)
+            import numpy as np
+            beat_per_k: dict[int, list[float]] = {}
+            for n in bank.notes.values():
+                if n.n_strings <= 1:
+                    continue
+                for p in n.partials:
+                    if p.beat_hz > 0:
+                        beat_per_k.setdefault(p.k, []).append(p.beat_hz)
+            self._beat_stats: dict[int, tuple[float, float]] = {}
+            for k, vals in beat_per_k.items():
+                if len(vals) < 5:
+                    continue
+                med = float(np.median(vals))
+                mad = float(np.median([abs(v - med) for v in vals]))
+                self._beat_stats[k] = (med, mad * 1.4826 if mad > 0 else 1.0)
+
             # Identifikuj outlier noty (skóre je normalizováno na 0–1)
             SCORE_CUTOFF = self.outlier_threshold / 5.0
             outlier_keys = [
@@ -266,7 +295,38 @@ class CorrectionEngine:
         if c:
             corrections.append(c)
         corrections.extend(self._propose_gamma_corrections(note, fit))
-        return corrections
+        corrections.extend(self._propose_beating_corrections(note, fit))
+
+        # Aplikuj correction weights — blend original → corrected
+        weighted = []
+        for c in corrections:
+            w = self._weight_for(c.field)
+            if w <= 0:
+                continue
+            if w >= 1.0:
+                weighted.append(c)
+            else:
+                blended = c.original + w * (c.corrected - c.original)
+                weighted.append(Correction(
+                    midi=c.midi, vel=c.vel, field=c.field,
+                    original=c.original, corrected=blended,
+                    source=c.source,
+                ))
+        return weighted
+
+    def _weight_for(self, field: str) -> float:
+        """Vrátí correction weight pro dané pole."""
+        if field == "B":
+            return self.weights.get("b_curve", 1.0)
+        if field.startswith("tau1_") or field.startswith("tau2_"):
+            return self.weights.get("tau", 1.0)
+        if field == "attack_tau":
+            return self.weights.get("attack_tau", 1.0)
+        if field.startswith("gamma_k"):
+            return self.weights.get("gamma_k", 1.0)
+        if field.startswith("beat_hz_"):
+            return self.weights.get("beating", 1.0)
+        return 1.0
 
     def _propose_B_correction(
         self, note: NoteParams, fit: FitResult
@@ -441,6 +501,42 @@ class CorrectionEngine:
             log.debug(f"gamma_k korekce  {note.note_key}  k={ki+1}  "
                       f"orig={orig:.3f}  median={median:.3f}  z={z_score:.1f}")
 
+        return corrections
+
+    def _propose_beating_corrections(
+        self, note: NoteParams, fit: FitResult
+    ) -> list[Correction]:
+        """
+        Porovná beat_hz parciálů s mediánem beat_hz přes klávesnici per k.
+        Navrhne korekci pro outliery.
+        """
+        corrections: list[Correction] = []
+        if note.n_strings <= 1:
+            return corrections  # bass — žádný beating
+
+        # Potřebujeme globální statistiku beat_hz per k — uloženou v self._beat_stats
+        if not hasattr(self, '_beat_stats'):
+            return corrections
+
+        for p in note.partials:
+            stats = self._beat_stats.get(p.k)
+            if stats is None:
+                continue
+            median, sigma = stats
+            if sigma < 1e-6:
+                continue
+            z = abs(p.beat_hz - median) / sigma
+            if z < self.outlier_threshold:
+                continue
+            delta_frac = abs(median - p.beat_hz) / max(abs(p.beat_hz), 1e-9)
+            if delta_frac * 100 < self.min_delta_pct:
+                continue
+            corrections.append(Correction(
+                midi=note.midi, vel=note.vel,
+                field=f"beat_hz_k{p.k}",
+                original=p.beat_hz, corrected=median,
+                source=CorrectionSource.SPECTRAL_SHAPE,
+            ))
         return corrections
 
     # ------------------------------------------------------------------

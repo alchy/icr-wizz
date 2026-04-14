@@ -3,6 +3,7 @@
 import React from 'react'
 import { useUiStore }     from '../store/uiStore'
 import { useAnchorStore } from '../store/anchorStore'
+import { midiApi }        from '../api/client'
 
 const VEL_LABELS = ['pp', 'p', 'mp', 'mf', 'mf+', 'f', 'ff-', 'ff']
 
@@ -62,7 +63,13 @@ export const VelocitySelector: React.FC = () => {
             return (
               <button
                 key={vel}
-                onClick={() => setVelocity(vel)}
+                onClick={() => {
+                  setVelocity(vel)
+                  if (selectedMidi !== null) {
+                    const midiVel = Math.round(1 + (vel / 7) * 126)
+                    midiApi.play(selectedMidi, midiVel).catch(() => {})
+                  }
+                }}
                 title={`${VEL_LABELS[vel]} (vel ${vel})`}
                 style={{
                   width: 18, height: 18, borderRadius: '50%',

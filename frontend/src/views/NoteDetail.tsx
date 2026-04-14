@@ -264,10 +264,10 @@ export const NoteDetail: React.FC = () => {
   useEffect(() => {
     if (!dampingRef.current || notes.length === 0) return
 
-    const mf = notes.find(n => n.vel === 4) || notes[0]
-    const fk2 = mf.partials.map(p => p.f_hz * p.f_hz)
-    const invTau = mf.partials.map(p => 1 / Math.max(p.tau1, 0.001))
-    const colors = mf.partials.map(p => p.fit_quality < 0.5 ? 'var(--c-outlier)' : 'var(--c-mid)')
+    const activeNote = notes.find(n => n.vel === selectedVel) || notes.find(n => n.vel === 4) || notes[0]
+    const fk2 = activeNote.partials.map(p => p.f_hz * p.f_hz)
+    const invTau = activeNote.partials.map(p => 1 / Math.max(p.tau1, 0.001))
+    const colors = activeNote.partials.map(p => p.fit_quality < 0.5 ? 'var(--c-outlier)' : 'var(--c-mid)')
 
     const traces: Plotly.Data[] = [
       {
@@ -286,7 +286,7 @@ export const NoteDetail: React.FC = () => {
         const m = field.match(/^tau1_k(\d+)$/)
         if (!m) continue
         const k = parseInt(m[1])
-        const p = mf.partials.find(pp => pp.k === k)
+        const p = activeNote.partials.find(pp => pp.k === k)
         if (!p) continue
         corrFk2.push(p.f_hz * p.f_hz)
         corrInvTau.push(1 / Math.max(c.corrected, 0.001))
@@ -322,7 +322,7 @@ export const NoteDetail: React.FC = () => {
     const layout: Partial<Plotly.Layout> = {
       ...LAYOUT_BASE,
       height: 160,
-      title: { text: 'Damping law (vel mf)', font: { size: 10 } },
+      title: { text: `Damping law (${VEL_LABELS[selectedVel]} ◄)`, font: { size: 10 } },
       xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'f_k² [Hz²]', font: { size: 9 } } },
       yaxis: { ...LAYOUT_BASE.yaxis, title: { text: '1/τ₁', font: { size: 9 } } },
     }
@@ -346,20 +346,33 @@ export const NoteDetail: React.FC = () => {
       kList.map(k => n.partials.find(p => p.k === k)?.beat_hz ?? 0)
     )
 
+    const yLabels = notes.map(n => VEL_LABELS[n.vel])
     const traces: Plotly.Data[] = [{
       type: 'heatmap',
       z,
       x: kList,
-      y: notes.map(n => VEL_LABELS[n.vel]),
+      y: yLabels,
       colorscale: [[0, '#141618'], [0.01, '#1A2A3A'], [1, '#378ADD']],
       hovertemplate: 'k=%{x} vel=%{y}: beat=%{z:.3f} Hz<extra></extra>',
       showscale: false,
     }]
 
+    // Zvýrazni řádek aktivní velocity
+    const activeLabel = VEL_LABELS[selectedVel]
+    if (yLabels.includes(activeLabel)) {
+      traces.push({
+        type: 'scatter', mode: 'lines',
+        x: [kList[0], kList[kList.length - 1]],
+        y: [activeLabel, activeLabel],
+        line: { color: '#BA7517', width: 2 },
+        hoverinfo: 'skip', showlegend: false,
+      } as Plotly.Data)
+    }
+
     const layout: Partial<Plotly.Layout> = {
       ...LAYOUT_BASE,
       height: 110,
-      title: { text: 'Beating map (beat_hz)', font: { size: 10 } },
+      title: { text: `Beating map (beat_hz) — ${VEL_LABELS[selectedVel]} ◄`, font: { size: 10 } },
       xaxis: { ...LAYOUT_BASE.xaxis, title: { text: 'k', font: { size: 9 } } },
       yaxis: { ...LAYOUT_BASE.yaxis, title: { text: '', font: { size: 9 } } },
     }
@@ -370,7 +383,7 @@ export const NoteDetail: React.FC = () => {
       Plotly.newPlot(beatingRef.current, traces, layout, { responsive: true, displayModeBar: false })
       ;(beatingRef.current as any)._plotly = true
     }
-  }, [notes])
+  }, [notes, selectedVel])
 
   // ---------------------------------------------------------------------------
   // Render

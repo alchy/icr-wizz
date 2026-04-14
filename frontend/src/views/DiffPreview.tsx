@@ -125,13 +125,32 @@ export const DiffPreview: React.FC = () => {
     try {
       const cs = await correctionsApi.tension(
         activePath, activeAnchor?.name, tensionVal)
-      // Ulož do correctionStore
       useCorrectionStore.setState({
         pending: cs,
         selected: new Set(cs.corrections.map(
           (c: any) => `${c.midi}_${c.vel}_${c.field}`)),
       })
       setStatus(`Tension: ${cs.corrections.length} korekcí`)
+    } catch (e: any) {
+      setStatus(`Chyba: ${e.message}`)
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  async function handlePCA() {
+    if (!activePath) return
+    setApplying(true)
+    setStatus(`PCA manifold (${tensionVal})…`)
+    try {
+      const cs = await correctionsApi.pca(
+        activePath, activeAnchor?.name, tensionVal)
+      useCorrectionStore.setState({
+        pending: cs,
+        selected: new Set(cs.corrections.map(
+          (c: any) => `${c.midi}_${c.vel}_${c.field}`)),
+      })
+      setStatus(`PCA: ${cs.corrections.length} korekcí`)
     } catch (e: any) {
       setStatus(`Chyba: ${e.message}`)
     } finally {
@@ -153,7 +172,12 @@ export const DiffPreview: React.FC = () => {
           <button className="btn btn--accent" onClick={handleTension}
                   disabled={!activePath || !activeAnchor || applying}
                   style={{ background: 'var(--c-bass)' }}>
-            {applying ? '…' : 'Tension manifold'}
+            {applying ? '…' : 'Tension'}
+          </button>
+          <button className="btn btn--accent" onClick={handlePCA}
+                  disabled={!activePath || !activeAnchor || applying}
+                  style={{ background: 'var(--c-fit)' }}>
+            {applying ? '…' : 'PCA'}
           </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: 11 }}>
@@ -267,6 +291,11 @@ export const DiffPreview: React.FC = () => {
                   disabled={!activePath || !activeAnchor || applying}
                   style={{ background: 'var(--c-bass)', color: '#fff' }}>
             {applying ? '…' : '⊗ Tension'}
+          </button>
+          <button className="btn" onClick={handlePCA}
+                  disabled={!activePath || !activeAnchor || applying}
+                  style={{ background: 'var(--c-fit)', color: '#fff' }}>
+            {applying ? '…' : '◎ PCA'}
           </button>
           <button className="btn" onClick={handlePropose}
                   disabled={!activePath || !summary || applying}>

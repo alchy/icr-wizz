@@ -129,10 +129,9 @@ export const NoteDetail: React.FC = () => {
         corrK.push(k)
         // Y pozice = clamp delta do rozsahu grafu (-50 až 0)
         const absDelta = Math.min(Math.abs(c.delta_pct), 200)
-        corrY.push(-absDelta / 4)  // -50 max, 0 min
-        // Velikost markeru úměrná delta
+        const sign = c.delta_pct >= 0 ? 1 : -1
+        corrY.push(sign * absDelta / 4)  // kladná delta nahoru, záporná dolů
         corrSizes.push(Math.max(5, Math.min(16, absDelta / 10)))
-        // Barva: zelená pro malé, oranžová pro střední, červená pro velké
         corrColors.push(absDelta < 20 ? C_CORR_LINE : absDelta < 80 ? '#BA7517' : '#E24B4A')
         corrText.push(`k=${k}: ${c.field} ${c.original.toPrecision(4)}→${c.corrected.toPrecision(4)} (${c.delta_pct.toFixed(1)}%)`)
       }
@@ -140,7 +139,8 @@ export const NoteDetail: React.FC = () => {
         traces.push({
           type: 'scatter', mode: 'markers',
           x: corrK, y: corrY,
-          marker: { color: corrColors, size: corrSizes, symbol: 'triangle-up',
+          marker: { color: corrColors, size: corrSizes,
+                    symbol: corrK.map((_, i) => corrY[i] >= 0 ? 'triangle-up' : 'triangle-down'),
                     line: { color: C_CORR_LINE, width: 1 } },
           hovertemplate: '%{text}<extra></extra>',
           text: corrText,

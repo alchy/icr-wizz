@@ -3,11 +3,12 @@
 
 import React, { useEffect, useRef, useCallback } from 'react'
 import * as d3 from 'd3'
-import { useBankStore }   from '../store/bankStore'
-import { useFitStore }    from '../store/fitStore'
-import { useAnchorStore } from '../store/anchorStore'
-import { useUiStore }     from '../store/uiStore'
-import { midiApi }        from '../api/client'
+import { useBankStore }       from '../store/bankStore'
+import { useFitStore }        from '../store/fitStore'
+import { useAnchorStore }     from '../store/anchorStore'
+import { useCorrectionStore } from '../store/correctionStore'
+import { useUiStore }         from '../store/uiStore'
+import { midiApi }            from '../api/client'
 import { midiToNoteName, outlierColor, noteKeyToMidiVel } from '../types'
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,8 @@ export const KeyboardMap: React.FC = () => {
   const isAnchor      = useAnchorStore(s => s.isAnchor)
   const entryScore    = useAnchorStore(s => s.entryScore)
 
+  const pending       = useCorrectionStore(s => s.pending)
+
   const selectedMidi  = useUiStore(s => s.selectedMidi)
   const selectedVel   = useUiStore(s => s.selectedVel)
   const selectNote    = useUiStore(s => s.selectNote)
@@ -71,6 +74,13 @@ export const KeyboardMap: React.FC = () => {
     noteKeys.forEach(k => { const [m] = noteKeyToMidiVel(k); set.add(m) })
     return set
   }, [noteKeys])
+
+  // MIDI noty s pending korekcemi
+  const correctedMidis = React.useMemo(() => {
+    const set = new Set<number>()
+    if (pending) pending.corrections.forEach(c => set.add(c.midi))
+    return set
+  }, [pending])
 
   // ---------------------------------------------------------------------------
   // D3 render
@@ -101,6 +111,16 @@ export const KeyboardMap: React.FC = () => {
         .attr('stroke-width', anchor ? 2 : 0.5)
         .attr('class', 'key key--white')
         .attr('data-midi', midi)
+
+      // Značka korekce (zelený trojúhelník dole)
+      if (correctedMidis.has(midi)) {
+        const cx = wx + (W_WHITE - 1) / 2
+        const cy = H_WHITE - 2
+        g.append('polygon')
+          .attr('points', `${cx-3},${cy} ${cx+3},${cy} ${cx},${cy-5}`)
+          .attr('fill', '#1D9E75')
+          .attr('pointer-events', 'none')
+      }
 
       // Outlier sloupec nad klávesou
       if (present && score > 0) {
@@ -190,7 +210,7 @@ export const KeyboardMap: React.FC = () => {
       .on('mouseout', () => hideTooltip())
 
   }, [outlierScore, isAnchor, selectedMidi, selectedVel, presentMidis,
-      noteKeys, selectNote, openDialog])
+      correctedMidis, noteKeys, selectNote, openDialog])
 
   useEffect(() => { render() }, [render])
 

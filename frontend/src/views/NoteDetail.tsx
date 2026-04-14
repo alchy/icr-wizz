@@ -3,13 +3,19 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import Plotly from 'plotly.js-dist-min'
-import { useBankStore } from '../store/bankStore'
-import { useFitStore }  from '../store/fitStore'
-import { useUiStore }   from '../store/uiStore'
+import { useBankStore }       from '../store/bankStore'
+import { useFitStore }        from '../store/fitStore'
+import { useCorrectionStore } from '../store/correctionStore'
+import { useUiStore }         from '../store/uiStore'
 import { midiToNoteName, midiToF0 } from '../types'
-import type { NoteParams, PartialParams } from '../types'
+import type { NoteParams, PartialParams, Correction } from '../types'
 
 const VEL_LABELS = ['pp', 'p', 'mp', 'mf', 'mf+', 'f', 'ff-', 'ff']
+
+// Correction overlay barvy — konzistentní přes celé UI
+const C_CORR_FILL   = 'rgba(29, 158, 117, 0.35)'  // světle zelená translucent
+const C_CORR_LINE   = '#1D9E75'                     // zelená plná
+const C_CORR_BORDER = '#0a3020'                     // tmavě zelený okraj
 const VEL_ALPHA  = [0.25, 0.35, 0.45, 0.6, 0.72, 0.82, 0.92, 1.0]
 
 // Barva velocity vrstvy — tmavší pro pp, světlejší pro ff
@@ -45,9 +51,26 @@ export const NoteDetail: React.FC = () => {
   const getCached  = useBankStore(s => s.getCachedNote)
 
   const details = useFitStore(s => s.details)
+  const pending = useCorrectionStore(s => s.pending)
 
   const [notes, setNotes] = useState<NoteParams[]>([])
   const [activeK, setActiveK] = useState<number>(1)
+
+  // Index korekcí pro vybranou notu: field → Correction (per vel, bereme selectedVel)
+  const selectedVel = useUiStore(s => s.selectedVel)
+  const corrMap = React.useMemo(() => {
+    const map = new Map<string, Correction>()
+    if (!pending || selectedMidi === null) return map
+    for (const c of pending.corrections) {
+      if (c.midi !== selectedMidi) continue
+      // Pro každý field bereme korekci pro selectedVel, nebo jakoukoli
+      const existing = map.get(c.field)
+      if (!existing || c.vel === selectedVel) {
+        map.set(c.field, c)
+      }
+    }
+    return map
+  }, [pending, selectedMidi, selectedVel])
 
   // Načti všechny velocity vrstvy pro vybranou notu
   useEffect(() => {
@@ -86,6 +109,30 @@ export const NoteDetail: React.FC = () => {
       }
     })
 
+    // Correction overlay: opravené tau jako zelené diamanty
+    if (corrMap.size > 0) {
+      const corrK: number[] = [], corrY: number[] = [], corrText: string[] = []
+      for (const [field, c] of corrMap) {
+        const m = field.match(/^tau1_k(\d+)$/)
+        if (!m) continue
+        const k = parseInt(m[1])
+        // Zobraz delta jako marker na ose k
+        corrK.push(k)
+        corrY.push(0)  // na referenční úrovni
+        corrText.push(`k=${k} τ1: ${c.original.toFixed(3)}→${c.corrected.toFixed(3)}s (${c.delta_pct.toFixed(1)}%)`)
+      }
+      if (corrK.length > 0) {
+        traces.push({
+          type: 'scatter', mode: 'markers',
+          x: corrK, y: corrY,
+          marker: { color: C_CORR_FILL, size: 12, symbol: 'diamond-open', line: { color: C_CORR_LINE, width: 2 } },
+          hovertemplate: '%{text}<extra></extra>',
+          text: corrText,
+          name: 'korekce τ1',
+        })
+      }
+    }
+
     // Highlight aktivní parciál
     traces.push({
       type: 'scatter', mode: 'markers',
@@ -114,7 +161,7 @@ export const NoteDetail: React.FC = () => {
       const k = data.points[0]?.x as number
       if (k) { setActiveK(k); selectPartial(k) }
     })
-  }, [notes, activeK, selectedMidi, selectPartial])
+  }, [notes, activeK, selectedMidi, selectPartial, corrMap])
 
   // ---------------------------------------------------------------------------
   // Plot 2: Decay envelope
@@ -140,6 +187,29 @@ export const NoteDetail: React.FC = () => {
         hovertemplate: '%{x:.2f}s: %{y:.1f} dB<extra></extra>',
       })
     })
+
+    // Correction overlay: opravená decay obálka (světle zelená)
+    const tau1Corr = corrMap.get(`tau1_k${activeK}`)
+    const tau2Corr = corrMap.get(`tau2_k${activeK}`)
+    if (tau1Corr || tau2Corr) {
+      const refNote = notes.find(n => n.vel === selectedVel) || notes[0]
+      const refP = refNote?.partials.find(pp => pp.k === activeK)
+      if (refP) {
+        const newTau1 = tau1Corr?.corrected ?? refP.tau1
+        const newTau2 = tau2Corr?.corrected ?? refP.tau2
+        const envCorr = t.map(ti => {
+          const A = refP.A0 * (refP.a1 * Math.exp(-ti / newTau1) + (1 - refP.a1) * Math.exp(-ti / newTau2))
+          return 20 * Math.log10(Math.max(A / refP.A0, 1e-6))
+        })
+        traces.push({
+          type: 'scatter', mode: 'lines',
+          x: t, y: envCorr,
+          line: { color: C_CORR_LINE, width: 2.5, dash: 'dot' },
+          name: 'opravená obálka',
+          hovertemplate: 'corr %{x:.2f}s: %{y:.1f} dB<extra></extra>',
+        })
+      }
+    }
 
     // Knee bod (τ1 přechod na τ2) pro forte
     const forte = notes.find(n => n.vel === 6) || notes[notes.length - 1]
@@ -167,7 +237,7 @@ export const NoteDetail: React.FC = () => {
       Plotly.newPlot(decayRef.current, traces, layout, { responsive: true, displayModeBar: false })
       ;(decayRef.current as any)._plotly = true
     }
-  }, [notes, activeK])
+  }, [notes, activeK, corrMap, selectedVel])
 
   // ---------------------------------------------------------------------------
   // Plot 3: Damping law
@@ -189,6 +259,31 @@ export const NoteDetail: React.FC = () => {
         name: '1/τ1(k)',
       },
     ]
+
+    // Correction overlay: opravené τ1 jako světle zelené body
+    {
+      const corrFk2: number[] = [], corrInvTau: number[] = [], corrText: string[] = []
+      for (const [field, c] of corrMap) {
+        const m = field.match(/^tau1_k(\d+)$/)
+        if (!m) continue
+        const k = parseInt(m[1])
+        const p = mf.partials.find(pp => pp.k === k)
+        if (!p) continue
+        corrFk2.push(p.f_hz * p.f_hz)
+        corrInvTau.push(1 / Math.max(c.corrected, 0.001))
+        corrText.push(`k=${k}: τ1 ${c.original.toFixed(3)}→${c.corrected.toFixed(3)}s`)
+      }
+      if (corrFk2.length > 0) {
+        traces.push({
+          type: 'scatter', mode: 'markers',
+          x: corrFk2, y: corrInvTau,
+          marker: { color: C_CORR_FILL, size: 9, symbol: 'diamond', line: { color: C_CORR_LINE, width: 1 } },
+          hovertemplate: '%{text}<extra></extra>',
+          text: corrText,
+          name: 'τ1 opraveno',
+        })
+      }
+    }
 
     // Fitted line z damping details
     if (selectedMidi !== null && details?.damping?.[selectedMidi]) {
@@ -219,7 +314,7 @@ export const NoteDetail: React.FC = () => {
       Plotly.newPlot(dampingRef.current, traces, layout, { responsive: true, displayModeBar: false })
       ;(dampingRef.current as any)._plotly = true
     }
-  }, [notes, details, selectedMidi])
+  }, [notes, details, selectedMidi, corrMap])
 
   // ---------------------------------------------------------------------------
   // Plot 4: Beating map (heatmapa k × vel)

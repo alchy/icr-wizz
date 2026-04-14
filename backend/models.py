@@ -368,9 +368,9 @@ class DampingParams(BaseModel):
 
     R: float = Field(..., description="Vnitřní tření struny")
     eta: float = Field(..., description="Frekvenčně závislý odpor")
-    residuals: dict[int, float] = Field(
+    residuals: dict[str, float] = Field(
         default_factory=dict,
-        description="{k: sigma od fitu}"
+        description="{note_key: sigma od fitu}"
     )
 
 

@@ -102,7 +102,7 @@ export const RelationView: React.FC = () => {
       x: bcOrigX, y: bcOrigY, text: bcOrigText,
       marker: { color: bcOrigColor, size: 7, symbol: bcOrigSymbol },
       hovertemplate: '%{text}<extra></extra>',
-      name: 'B originál',
+      name: '⬤ B originál',
     }
 
     const bcCorrTrace: Plotly.Data = {
@@ -110,7 +110,7 @@ export const RelationView: React.FC = () => {
       x: bcCorrX, y: bcCorrY, text: bcCorrText,
       marker: { color: C_CORR_FILL, size: 9, symbol: 'diamond', line: { color: C_CORR_LINE, width: 1 } },
       hovertemplate: '%{text}<extra></extra>',
-      name: 'B opraveno',
+      name: '◇ B opraveno',
     }
 
     // B-curve fit line
@@ -130,7 +130,7 @@ export const RelationView: React.FC = () => {
         type: 'scatter', mode: 'lines',
         x: xLine, y: yLine,
         line: { color: '#534AB7', width: 1.5 },
-        hoverinfo: 'skip', name: 'B-curve fit',
+        hoverinfo: 'skip', name: '◇ B-curve fit',
       })
     }
 
@@ -160,14 +160,14 @@ export const RelationView: React.FC = () => {
       type: 'bar', x: resX, y: resY,
       marker: { color: resColors },
       hovertemplate: '%{x}: %{y:.3f}<extra></extra>',
-      name: 'outlier skóre (originál)',
+      name: '◇ outlier skóre',
     }
 
     const corrResTrace: Plotly.Data = {
       type: 'bar', x: corrResX, y: corrResY,
       marker: { color: C_CORR_LINE, opacity: 0.7 },
       hovertemplate: '%{x}: ~%{y:.3f} (po korekci)<extra></extra>',
-      name: 'odhad po korekci',
+      name: '◇ odhad po korekci',
     }
 
     // -----------------------------------------------------------------------
@@ -193,11 +193,11 @@ export const RelationView: React.FC = () => {
         { type: 'scatter', mode: 'lines+markers',
           x: tau1X, y: tau1Y,
           line: { color: '#1D9E75', width: 1.5 }, marker: { size: 4 },
-          name: 'τ1', hovertemplate: 'MIDI %{x}: τ1=%{y:.2f}s<extra></extra>' },
+          name: '◇ τ1 fit', hovertemplate: 'MIDI %{x}: τ1=%{y:.2f}s<extra></extra>' },
         { type: 'scatter', mode: 'lines+markers',
           x: tau2X, y: tau2Y,
           line: { color: '#534AB7', width: 1.5, dash: 'dot' }, marker: { size: 4 },
-          name: 'τ2', hovertemplate: 'MIDI %{x}: τ2=%{y:.2f}s<extra></extra>' },
+          name: '◇ τ2 fit', hovertemplate: 'MIDI %{x}: τ2=%{y:.2f}s<extra></extra>' },
       )
     }
 
@@ -216,11 +216,11 @@ export const RelationView: React.FC = () => {
           { type: 'scatter', mode: 'markers',
             x: tauCorrX, y: tauOrigY,
             marker: { color: C_ORIGINAL, size: 8, symbol: 'x' },
-            name: 'τ1 orig (outlier)', hovertemplate: 'MIDI %{x}: τ1 orig=%{y:.3f}s<extra></extra>' },
+            name: '⬤ τ1 orig (outlier)', hovertemplate: 'MIDI %{x}: τ1 orig=%{y:.3f}s<extra></extra>' },
           { type: 'scatter', mode: 'markers',
             x: tauCorrX, y: tauCorrY,
             marker: { color: C_CORR_FILL, size: 9, symbol: 'diamond', line: { color: C_CORR_LINE, width: 1 } },
-            name: 'τ1 opraveno', hovertemplate: 'MIDI %{x}: τ1 corr=%{y:.3f}s<extra></extra>' },
+            name: '◇ τ1 opraveno', hovertemplate: 'MIDI %{x}: τ1 corr=%{y:.3f}s<extra></extra>' },
         )
       }
     }
@@ -242,7 +242,7 @@ export const RelationView: React.FC = () => {
         type: 'scatter', mode: 'lines+markers',
         x: gX, y: gY,
         line: { color: '#BA7517', width: 1.5 }, marker: { size: 4 },
-        name: 'γ_k průměr',
+        name: '◇ γ_k průměr',
         hovertemplate: 'MIDI %{x}: γ_mean=%{y:.2f}<extra></extra>',
       })
     }
@@ -281,12 +281,12 @@ export const RelationView: React.FC = () => {
             { type: 'scatter', mode: 'markers',
               x: gcX, y: gcOrigY,
               marker: { color: C_ORIGINAL, size: 7, symbol: 'x' },
-              hoverinfo: 'skip', name: 'γ_k orig' },
+              hoverinfo: 'skip', name: '⬤ γ_k orig' },
             { type: 'scatter', mode: 'markers',
               x: gcX, y: gcCorrY, text: gcText,
               marker: { color: C_CORR_FILL, size: 9, symbol: 'diamond', line: { color: C_CORR_LINE, width: 1 } },
               hovertemplate: '%{text}<extra></extra>',
-              name: 'γ_k opraveno' },
+              name: '◇ γ_k opraveno' },
           )
         }
       }

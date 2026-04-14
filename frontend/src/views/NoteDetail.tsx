@@ -105,7 +105,7 @@ export const NoteDetail: React.FC = () => {
       )
       return {
         type:  'bar',
-        name:  `${VEL_LABELS[note.vel]}${isActive ? ' ◄' : ''}`,
+        name:  `⬤ ${VEL_LABELS[note.vel]}${isActive ? ' ◄' : ''}`,
         x:     note.partials.map(p => p.k),
         y:     A0dB,
         marker:{ color: velColor(note.vel, isActive ? 1.0 : VEL_ALPHA[note.vel] * 0.4),
@@ -136,7 +136,7 @@ export const NoteDetail: React.FC = () => {
           marker: { color: C_CORR_LINE, size: 10, symbol: 'triangle-up' },
           hovertemplate: '%{text}<extra></extra>',
           text: corrText,
-          name: 'korekce τ',
+          name: '◇ korekce τ',
         })
       }
     }
@@ -224,7 +224,7 @@ export const NoteDetail: React.FC = () => {
           type: 'scatter', mode: 'lines',
           x: t, y: envCorr,
           line: { color: C_CORR_LINE, width: 2.5, dash: 'dot' },
-          name: 'opravená obálka',
+          name: '◇ opravená obálka',
           hovertemplate: 'corr %{x:.2f}s: %{y:.1f} dB<extra></extra>',
         })
       }
@@ -238,7 +238,7 @@ export const NoteDetail: React.FC = () => {
         type: 'scatter', mode: 'lines',
         x: [fp.tau1, fp.tau1], y: [-60, 0],
         line: { color: 'var(--c-anchor)', width: 1, dash: 'dot' },
-        hoverinfo: 'skip', name: 'knee',
+        hoverinfo: 'skip', name: '◇ knee',
       })
     }
 
@@ -275,7 +275,7 @@ export const NoteDetail: React.FC = () => {
         x: fk2, y: invTau,
         marker: { color: colors, size: 6 },
         hovertemplate: 'f²=%{x:.0f}  1/τ=%{y:.4f}<extra></extra>',
-        name: '1/τ1(k)',
+        name: '⬤ 1/τ1(k)',
       },
     ]
 
@@ -299,7 +299,7 @@ export const NoteDetail: React.FC = () => {
           marker: { color: C_CORR_FILL, size: 9, symbol: 'diamond', line: { color: C_CORR_LINE, width: 1 } },
           hovertemplate: '%{text}<extra></extra>',
           text: corrText,
-          name: 'τ1 opraveno',
+          name: '◇ τ1 opraveno',
         })
       }
     }
@@ -314,7 +314,7 @@ export const NoteDetail: React.FC = () => {
         type: 'scatter', mode: 'lines',
         x: xLine, y: yLine,
         line: { color: '#534AB7', width: 1.5 },
-        name: `R=${dp.R.toFixed(3)} η=${dp.eta.toExponential(2)}`,
+        name: `◇ fit R=${dp.R.toFixed(3)} η=${dp.eta.toExponential(2)}`,
         hoverinfo: 'skip',
       })
     }

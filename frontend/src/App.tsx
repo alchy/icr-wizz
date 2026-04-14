@@ -11,6 +11,8 @@ import { VelocityEditor }  from './views/VelocityEditor'
 import { AnchorPanel }     from './views/AnchorPanel'
 import { DiffPreview }     from './views/DiffPreview'
 import { MidiPanel }       from './views/MidiPanel'
+import { ParamSpaceView }  from './views/ParamSpaceView'
+import { ParamSpace3DView }from './views/ParamSpace3DView'
 import { PanelNav }        from './components/PanelNav'
 import { VelocitySelector }from './components/VelocitySelector'
 import { FitHeatmap }      from './components/FitHeatmap'
@@ -39,6 +41,8 @@ export default function App() {
       case 'velocity_editor': return <VelocityEditor />
       case 'anchor_panel':    return <AnchorPanel />
       case 'diff_preview':    return <DiffPreview />
+      case 'param_space':     return <ParamSpaceView />
+      case 'param_space_3d': return <ParamSpace3DView />
       case 'midi_panel':      return <MidiPanel />
     }
   }

@@ -30,6 +30,7 @@ export const PanelNav: React.FC = () => {
     { id: 'velocity_editor', label: 'Velocity' },
     { id: 'anchor_panel',    label: 'Anchor',  badge: () => anchorDb?.entries.length ?? null },
     { id: 'diff_preview',    label: 'Korekce', badge: () => pending?.corrections.length ?? null },
+    { id: 'param_space',     label: 'Prostor' },
     { id: 'midi_panel',      label: 'MIDI' },
   ]
 

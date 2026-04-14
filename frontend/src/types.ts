@@ -250,6 +250,7 @@ export type PanelView =
   | 'velocity_editor'
   | 'anchor_panel'
   | 'diff_preview'
+  | 'param_space'
   | 'midi_panel'
 
 export type OutlierLevel = 'ok' | 'mild' | 'warn' | 'crit'

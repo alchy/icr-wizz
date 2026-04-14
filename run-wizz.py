@@ -98,8 +98,17 @@ def start_icr():
     port_index = _find_midi_port_index(midi_port_name)
 
     cmd = [icr_bin, "--core", core, "--port", str(port_index)]
-    if params and Path(params).exists():
-        cmd += ["--params", params]
+    if params:
+        # Resolv relativní cesty vůči backend/ nebo ROOT
+        params_path = Path(params)
+        if not params_path.is_absolute():
+            for base in [ROOT / "backend", ROOT]:
+                candidate = base / params
+                if candidate.exists():
+                    params_path = candidate
+                    break
+        if params_path.exists():
+            cmd += ["--params", str(params_path.resolve())]
 
     log(f"starting ICR: {' '.join(cmd)}")
     icr_proc = subprocess.Popen(

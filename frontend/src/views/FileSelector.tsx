@@ -62,13 +62,23 @@ export const FileSelector: React.FC = () => {
     return () => { cancelled = true; previewSocket.disconnect() }
   }, [loadDatabases])
 
-  // List souborů v adresáři
+  // List souborů v adresáři + exported
   async function handleList() {
     if (!directory.trim()) return
     setListError(''); setLoading(true)
     try {
       const items = await bankApi.list(directory.trim())
-      setListing(items)
+      // Přidej exported banky
+      try {
+        const exported = await bankApi.list('exported')
+        const tagged = exported.map(e => ({
+          ...e,
+          filename: `[exported] ${e.filename}`,
+        }))
+        setListing([...items, ...tagged])
+      } catch {
+        setListing(items)
+      }
     } catch (e: any) {
       setListError(e.message)
     } finally {

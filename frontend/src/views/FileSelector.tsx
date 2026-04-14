@@ -21,16 +21,21 @@ export const FileSelector: React.FC = () => {
   const [showNewDb, setShowNewDb]     = useState(false)
 
   const { tabs, activeTabPath, addTabs, setActiveTab, closeTab } = useBankStore()
-  const { runFit } = useFitStore()
+  const { runFit, fetchDetails } = useFitStore()
   const { selectDb, createDb, active: activeDb, loadDatabases, databases } = useAnchorStore()
   const { setStatus } = useUiStore()
 
   // Načti config + anchor DB při mountu
   useEffect(() => {
-    configApi.get().then(cfg => {
+    configApi.get().then(async (cfg) => {
       const dir = cfg.soundbank_directory
       if (typeof dir === 'string' && dir && !directory) {
         setDirectory(dir)
+      }
+      // Načíst poslední anchor DB
+      const lastAnchor = cfg.last_anchor_db
+      if (typeof lastAnchor === 'string' && lastAnchor) {
+        await selectDb(lastAnchor).catch(() => {})
       }
       // Automaticky otevřít poslední banku
       const lastBank = cfg.last_bank_path
@@ -69,9 +74,10 @@ export const FileSelector: React.FC = () => {
       addTabs(newTabs)
       if (newTabs[0]) {
         setActiveTab(newTabs[0].path)
-        // Initial fit
+        // Initial fit + details
         setStatus('Spouštím analýzu…')
         await runFit(newTabs[0].path, activeDb?.name)
+        fetchDetails(newTabs[0].path, activeDb?.name)
         // WS init
         previewSocket.send({
           action: 'init',
@@ -201,6 +207,7 @@ export const FileSelector: React.FC = () => {
                   setShowNewDb(true)
                 } else if (e.target.value) {
                   selectDb(e.target.value)
+                  configApi.patch({ last_anchor_db: e.target.value }).catch(() => {})
                 }
               }}
             >

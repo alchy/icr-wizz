@@ -179,12 +179,22 @@ def _bank_to_resp(bank: BankState) -> BankStateResponse:
         stereo_config=bank.stereo_config.model_dump() if bank.stereo_config else None,
     )
 
-def _fit_to_summary(fit: FitResult) -> FitSummary:
-    per_vel = dict(fit.outlier_scores)
-    per_pfx: dict[str, float] = {}
-    for key, score in per_vel.items():
-        pfx = key.split("_")[0]
-        per_pfx[pfx] = max(per_pfx.get(pfx, 0.0), score)
+def _fit_to_summary(fit: FitResult, bank: BankState = None) -> FitSummary:
+    # fit.outlier_scores má klíče "m060" (prefix per MIDI nota)
+    per_pfx = dict(fit.outlier_scores)
+
+    # Rozbal prefix skóre na per-vel klíče pro heatmap
+    per_vel: dict[str, float] = {}
+    if bank is not None:
+        for note_key in bank.notes:
+            pfx = note_key.split("_")[0]
+            per_vel[note_key] = per_pfx.get(pfx, 0.0)
+    else:
+        # Fallback: expanduj na 8 velocity vrstev
+        for pfx, score in per_pfx.items():
+            for vel in range(8):
+                per_vel[f"{pfx}_vel{vel}"] = score
+
     return FitSummary(
         outlier_scores=per_pfx,
         outlier_scores_per_vel=per_vel,
@@ -294,7 +304,7 @@ async def run_fit(bank_path: str, request: FitRequest):
             try: anchor_db = await _run_blocking(mgr.load, request.anchor_db_name)
             except AnchorNotFoundError: pass
         fit = await _run_blocking(fitter.fit_all, bank, anchor_db)
-        return _fit_to_summary(fit)
+        return _fit_to_summary(fit, bank)
     except BankLoadError as e: raise _err(log, 404, str(e), e)
     except Exception as e:     raise _err(log, 500, str(e), e)
 
@@ -607,7 +617,7 @@ def _ws_handle(msg: WsMessage, session: dict) -> WsResponse:
         try:
             fit = qf.fit_all(bank, session["anchor_db"])
             session["last_fit"] = fit
-            s = _fit_to_summary(fit)
+            s = _fit_to_summary(fit, bank)
             return WsResponse(
                 outlier_scores=s.outlier_scores,
                 outlier_scores_per_vel=s.outlier_scores_per_vel,
@@ -628,21 +638,22 @@ def _ws_handle(msg: WsMessage, session: dict) -> WsResponse:
 
     # --- update_anchor ---
     if action == "update_anchor":
-        midi  = payload.get("midi")
-        vel   = payload.get("vel", -1)
-        score = payload.get("score", 5.0)
+        # Reload anchor DB z disku (REST API ji právě uložil)
         db = session.get("anchor_db")
-        if db is None:
+        if db is not None:
+            try:    db = mgr.load(db.name)
+            except: pass
+        else:
             db_name = payload.get("anchor_db_name")
-            try:    db = mgr.load(db_name) if db_name else mgr.create("session-temp")
-            except: db = mgr.create("session-temp")
-        db = mgr.add_entry(db, midi, vel, score)
+            if db_name:
+                try:    db = mgr.load(db_name)
+                except: db = None
         session["anchor_db"] = db
         qf = RelationFitter(plugins=[BCurveFitter(), VelocityModelFitter()], sigma_threshold=2.5)
         try:
             fit = qf.fit_all(bank, db)
             session["last_fit"] = fit
-            s = _fit_to_summary(fit)
+            s = _fit_to_summary(fit, bank)
             return WsResponse(
                 outlier_scores=s.outlier_scores,
                 outlier_scores_per_vel=s.outlier_scores_per_vel,

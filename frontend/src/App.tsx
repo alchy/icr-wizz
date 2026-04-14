@@ -110,11 +110,12 @@ export default function App() {
             }}>
               <FitHeatmap />
             </div>
-            {/* Velocity selektor vpravo */}
+            {/* Velocity selektor + anchor vpravo */}
             <div style={{
               flexShrink: 0,
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-start',
+              paddingTop: 'var(--sp-1)',
             }}>
               <VelocitySelector />
             </div>

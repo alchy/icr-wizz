@@ -58,6 +58,20 @@ async function del<T>(path: string, params?: Record<string, string | number>): P
   return res.json()
 }
 
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const url = new URL(BASE + path, window.location.origin)
+  const res = await fetch(url.toString(), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new ApiError(res.status, b.detail ?? res.statusText)
+  }
+  return res.json()
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message)
@@ -71,6 +85,8 @@ export class ApiError extends Error {
 
 export const configApi = {
   get: () => get<Record<string, unknown>>('/config'),
+  patch: (updates: Record<string, unknown>) =>
+    patch<Record<string, unknown>>('/config', updates),
 }
 
 // ---------------------------------------------------------------------------

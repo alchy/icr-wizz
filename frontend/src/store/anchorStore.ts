@@ -4,6 +4,7 @@
 import { create } from 'zustand'
 import type { AnchorDatabase, AnchorListItem, CoverageReport } from '../types'
 import { anchorApi } from '../api/client'
+import { previewSocket } from '../api/client'
 
 interface AnchorStore {
   databases:  AnchorListItem[]
@@ -67,9 +68,13 @@ export const useAnchorStore = create<AnchorStore>((set, get) => ({
     const { active } = get()
     if (!active) return
     await anchorApi.addEntry(active.name, { midi, vel, score, note })
-    // Reload DB
     const db = await anchorApi.load(active.name)
     set({ active: db })
+    // Inkrementální refit přes WS
+    previewSocket.send({
+      action: 'update_anchor',
+      payload: { midi, vel, score },
+    })
   },
 
   removeEntry: async (midi, vel) => {
@@ -78,6 +83,11 @@ export const useAnchorStore = create<AnchorStore>((set, get) => ({
     await anchorApi.removeEntry(active.name, midi, vel)
     const db = await anchorApi.load(active.name)
     set({ active: db })
+    // Inkrementální refit přes WS
+    previewSocket.send({
+      action: 'update_anchor',
+      payload: { midi, vel, score: 0 },
+    })
   },
 
   refreshCoverage: async (bankPath) => {

@@ -31,6 +31,7 @@ export const PanelNav: React.FC = () => {
     { id: 'anchor_panel',    label: 'Anchor',  badge: () => anchorDb?.entries.length ?? null },
     { id: 'diff_preview',    label: 'Korekce', badge: () => pending?.corrections.length ?? null },
     { id: 'param_space',     label: 'Prostor' },
+    { id: 'param_space_3d', label: '3D' },
     { id: 'midi_panel',      label: 'MIDI' },
   ]
 

@@ -251,6 +251,7 @@ export type PanelView =
   | 'anchor_panel'
   | 'diff_preview'
   | 'param_space'
+  | 'param_space_3d'
   | 'midi_panel'
 
 export type OutlierLevel = 'ok' | 'mild' | 'warn' | 'crit'

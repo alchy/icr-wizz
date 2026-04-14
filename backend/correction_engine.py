@@ -589,17 +589,23 @@ class CorrectionEngine:
         # Parciální korekce: {k: {field: value}}
         partial_updates: dict[int, dict] = {}
 
-        # Parametry které musí být >= 0
-        NON_NEGATIVE = {"B", "rms_gain", "attack_tau", "A_noise",
-                        "A0", "tau1", "tau2", "a1", "beat_hz",
-                        "noise_centroid_hz"}
+        # Sanitizace: minimální hodnoty per parametr
+        PARAM_FLOOR = {
+            "B": 1e-8, "rms_gain": 1e-6, "attack_tau": 0.001,
+            "A_noise": 0.0, "noise_centroid_hz": 20.0,
+            "A0": 1e-6, "tau1": 0.005, "tau2": 0.005,
+            "a1": 0.0, "beat_hz": 0.0,
+        }
+        PARAM_CEIL = {"a1": 1.0}
 
         for c in corrections:
             field_type, k = CorrectionEngine._parse_field_name(c.field)
             val = c.corrected
-            # Sanitizace: clamp záporných hodnot
-            if field_type in NON_NEGATIVE and val < 0:
-                val = 0.0
+            # Clamp na fyzikální rozsah
+            if field_type in PARAM_FLOOR:
+                val = max(val, PARAM_FLOOR[field_type])
+            if field_type in PARAM_CEIL:
+                val = min(val, PARAM_CEIL[field_type])
 
             if k is None:
                 scalar_updates[field_type] = val

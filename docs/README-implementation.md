@@ -174,6 +174,7 @@ class DampingParams(BaseModel):
 class FitResult(BaseModel):
     b_curve: Optional[BCurveParams]
     damping: dict[int, DampingParams]        # {midi: params}
+    damping_spline: dict[str, float]         # {"k{k}_m{midi}_v{vel}": predicted_inv_tau1}
     shape_residuals: dict[str, float]        # {note_key: dB}
     gamma_k: dict[int, list[float]]          # {midi: [γ_k] * k_max}
     attack_alpha: dict[int, float]
@@ -442,18 +443,24 @@ class AnchorManager:
 
 ## correction_engine.py — CorrectionEngine
 
-**Odpovědnost:** navrhnout a aplikovat korekce na základě FitResult.
+**Odpovědnost:** navrhnout a aplikovat fit-based korekce na základě FitResult. Toto je jedna ze tří korekčních metod (viz tension_manifold.py a pca_manifold.py).
 
 **Paralelizace:** `propose()` ThreadPool per-nota (nezávislé). `apply()` sekvenční (deep copy + field patch < 10ms pro 704 not).
 
 ```python
 class CorrectionEngine:
+    DEFAULT_WEIGHTS = {"b_curve": 1.0, "tau": 1.0, "attack_tau": 1.0,
+                       "gamma_k": 1.0, "beating": 1.0}
+
     def __init__(self, outlier_threshold: float = 2.5,
-                 min_delta_pct: float = 0.5): ...
+                 min_delta_pct: float = 0.5,
+                 note_workers: int = _NOTE_WORKERS,
+                 correction_weights: Optional[dict[str, float]] = None,
+                 tau_spline_threshold: float = 0.20): ...
 
     def propose(self, bank: BankState, fit: FitResult,
                 anchor_weights: Optional[dict] = None) -> CorrectionSet:
-        """ThreadPool per-nota. Vrátí CorrectionSet (ne list)."""
+        """ThreadPool per-nota. Fáze 1: outlier noty, Fáze 2: spline tau pro všechny."""
 
     def apply(self, bank: BankState, correction_set: CorrectionSet,
               selected_fields: Optional[list[str]] = None) -> BankState:
@@ -465,13 +472,131 @@ class CorrectionEngine:
 ```
 
 **Korekční strategie per typ:**
-- `B` → hodnota z B-curve fitu: `10^(α·log10(f0)+β)`
-- `tau1_k{n}` outlier → z damping law: `1/(R + η·f_k²)`
-- `tau2_k{n}` outlier → zachovat poměr `τ2/τ1` z cluster mediánu pro register
-- `attack_tau` → z power-law velocity modelu s clampingem 0.10s
-- `A0` se **neopravuje** — záležitost ReferenceCorrectoru v originální pipeline
 
-**`field` formáty:** `"B"`, `"tau1_k3"`, `"tau2_k3"`, `"A0_k5"`, `"attack_tau"`
+| Parametr | Podmínka opravy | Zdroj korekce | CorrectionSource |
+|----------|----------------|--------------|------------------|
+| `B` | residuál > threshold od B-curve | `10^(α·log10(f0)+β)` | B_CURVE_FIT |
+| `tau1_k{n}` | \|orig − spline_pred\| / pred > tau_spline_threshold | cross-keyboard spline (fallback: damping law) | DAMPING_LAW |
+| `tau2_k{n}` | odvozeno z tau1 korekce | zachovat poměr τ2/τ1 z originálu | DAMPING_LAW |
+| `attack_tau` | > 0.10s strop nebo > 2σ od trendu | power-law velocity model s cap 0.10s | VELOCITY_MODEL |
+| `gamma_k{n}` | z-score > outlier_threshold od keyboard mediánu | medián γ_k přes MIDI per harmonik | SPECTRAL_SHAPE |
+| `beat_hz_k{n}` | z-score > outlier_threshold od keyboard mediánu | medián beat_hz přes MIDI per k | SPECTRAL_SHAPE |
+
+`A0` se neopravuje přes CorrectionEngine (manifold metody A0 korigují).
+
+`correction_weights` umožňuje blendovat korekce per typ (0.0 = ignoruj, 1.0 = plná korekce).
+
+**`field` formáty:** `"B"`, `"tau1_k3"`, `"tau2_k3"`, `"attack_tau"`, `"gamma_k5"`, `"beat_hz_k3"`
+
+---
+
+## tension_manifold.py — TensionManifold
+
+**Odpovědnost:** anchor-based korekce interpolací v parametrovém prostoru. Pro každou non-anchor notu interpoluje „ideální" parametrový vektor z nejbližších anchorů.
+
+**Paralelizace:** sekvenční — výpočet per nota je rychlý (~1ms), overhead threadingu by převýšil zisk.
+
+```python
+def propose_tension_corrections(
+    bank: BankState,
+    anchor_db: AnchorDatabase,
+    tension: float = 0.5,       # 0.0 = žádná korekce, 1.0 = plná projekce
+    falloff: float = 12.0,      # Gaussova šířka v půltónech (12 = oktáva)
+    min_delta_pct: float = 1.0,
+    max_delta_pct: float = 200.0,
+    k_max: int = 60,
+    n_neighbors: int = 8,
+) -> CorrectionSet: ...
+```
+
+**Algoritmus:**
+1. Expanduj anchor entries (vel=-1 → 8 velocity vrstev)
+2. Pre-compute anchor parametrové vektory
+3. Pro každou non-anchor notu:
+   a. Najdi top-N sousedů: `weight = gauss(Δmidi, falloff) × score_weight × vel_penalty`
+   b. Interpoluj: vážený průměr parametrových vektorů (per-parametr nezávisle)
+   c. Blend: log-space pro multiplikativní parametry (B, τ, A0), lineární pro ostatní
+   d. Clamp extrémní korekce na ±max_delta_pct
+
+**Omezení:** interpoluje každý parametr nezávisle — nerespektuje korelace mezi parametry. PCA manifold tento problém řeší.
+
+---
+
+## pca_manifold.py — PCA Manifold
+
+**Odpovědnost:** anchor-based korekce interpolací v PCA latentním prostoru. Zachovává korelační strukturu mezi parametry.
+
+**Paralelizace:** sekvenční (numpy vektorizace pro SVD, IDW per nota ~0.5ms).
+
+```python
+class PCACorrector:
+    def __init__(self,
+                 n_components: float = 0.95,  # zachovej 95% variance
+                 tension: float = 0.5,
+                 min_delta_pct: float = 1.0,
+                 max_delta_pct: float = 200.0,
+                 k_max: int = 30): ...
+
+    def fit(self, bank: BankState, anchor_db: AnchorDatabase) -> dict: ...
+    def interpolate(self, midi: int, vel: int) -> np.ndarray: ...
+    def propose(self, bank: BankState, anchor_db: AnchorDatabase) -> CorrectionSet: ...
+
+def propose_pca_corrections(bank, anchor_db, ...) -> CorrectionSet:
+    """Convenience: fit + propose v jednom."""
+```
+
+**Pipeline:**
+1. **Fit:** extrahuj anchor vektory v log prostoru → z-score → SVD → zachovej n komponent
+2. **Encode anchory:** uloží (midi, vel) → PCA koeficienty pro každý anchor
+3. **Interpolace:** pro non-anchor notu IDW v (midi, vel) prostoru → vážený průměr anchor koeficientů → decode
+4. **Blend:** log-space pro multiplikativní parametry, lineární pro ostatní
+
+**Metrika vzdálenosti:** `d² = (Δmidi/12)² + (Δvel)²` — 1 oktáva ≈ 1 velocity krok.
+
+**Klíčový rozdíl oproti Tension:** interpolace probíhá v PCA latentním prostoru. Decoded výsledek zachovává korelace mezi parametry (např. B a tau1 se mění koordinovaně). Tension interpoluje per-parametr nezávisle — může produkovat kombinace, které neodpovídají žádnému reálnému anchoru.
+
+**Log-space parametry:** B, rms_gain, attack_tau, A_noise, A0, tau1, tau2 — transformovány logaritmem před PCA (striktně kladné, multiplikativní povahy)
+
+---
+
+## rbf_surface.py — RBF Surface
+
+**Odpovědnost:** anchor-based korekce fitováním hladkých RBF ploch přes anchor body v (midi, vel) prostoru. Na rozdíl od IDW (Tension, PCA) vytváří globální model tvaru variace.
+
+**Paralelizace:** sekvenční — scipy RBFInterpolator řeší 39×39 systém, ~2ms.
+
+```python
+class RBFCorrector:
+    def __init__(self,
+                 kernel: str = "thin_plate_spline",
+                 smoothing: float = 0.0,
+                 tension: float = 0.5,
+                 min_delta_pct: float = 1.0,
+                 max_delta_pct: float = 200.0,
+                 k_max: int = 30): ...
+
+    def fit(self, bank: BankState, anchor_db: AnchorDatabase) -> dict: ...
+    def interpolate(self, midi: int, vel: int) -> np.ndarray: ...
+    def propose(self, bank: BankState, anchor_db: AnchorDatabase) -> CorrectionSet: ...
+
+def propose_rbf_corrections(bank, anchor_db, ...) -> CorrectionSet:
+    """Convenience: fit + propose v jednom."""
+```
+
+**Pipeline:**
+1. **Fit:** extrahuj anchor vektory v log prostoru, sestav pozice X=(midi/12, vel) a hodnoty Y
+2. **RBFInterpolator:** fituj `scipy.interpolate.RBFInterpolator(X, Y, kernel=...)` — multivariate output (155 parametrů najednou)
+3. **Interpolace:** evaluuj surface na (midi, vel) → cílový log-space vektor
+4. **Blend:** log-space pro multiplikativní parametry, lineární pro ostatní
+
+**Dostupná jádra:** `thin_plate_spline` (default, hladké, bez hyperparametrů), `multiquadric`, `gaussian`, `cubic`, `linear`, `quintic`.
+
+**Klíčový rozdíl oproti PCA a Tension:**
+- **Tension:** IDW — žádný model tvaru, per-parametr nezávisle
+- **PCA:** IDW v latentním prostoru — zachovává korelace, ale redukce dimenze zahazuje informaci
+- **RBF:** globální povrch — strukturovaný model variace v plném parametrovém prostoru, zachovává korelace přirozeně (surface prochází anchor body)
+
+**Smoothing:** 0.0 = přesná interpolace (povrch prochází anchor body). Kladná hodnota = aproximace (užitečné pro anchory s nízkým confidence score).
 
 ---
 

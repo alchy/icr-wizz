@@ -69,7 +69,9 @@ piano-editor/
 │   ├── relation_fitter.py        # RelationFitter + FitPlugin architektura
 │   ├── outlier_detector.py       # OutlierDetector — MAD-sigma, OutlierReport
 │   ├── anchor_manager.py         # AnchorManager — databáze korekcí, score → váhy
-│   ├── correction_engine.py      # CorrectionEngine — propose, apply, diff
+│   ├── correction_engine.py      # CorrectionEngine — fit-based propose, apply, diff
+│   ├── tension_manifold.py       # TensionManifold — anchor IDW interpolace v param prostoru
+│   ├── pca_manifold.py           # PCAManifold — anchor interpolace v PCA latentním prostoru
 │   ├── bank_exporter.py          # BankExporter — JSON export, diff mode, CSV report
 │   ├── midi_bridge.py            # MidiBridge — SysEx patch interface
 │   └── requirements.txt
@@ -123,9 +125,10 @@ piano-editor/
    uživatel klikne klávesu + přidělí score 0–9 → AnchorPanel
    → WS /ws/preview → live update spline a residuálů
 
-4. Correction proposal
-   → POST /corrections/propose
-   → CorrectionEngine → list[Correction]
+4. Correction proposal (3 nezávislé metody)
+   → POST /corrections/propose — fit-based korekce (B-curve, damping, velocity model)
+   → POST /corrections/tension — anchor IDW interpolace v parametrovém prostoru
+   → POST /corrections/pca — anchor interpolace v PCA latentním prostoru
    → DiffPreview zobrazí diff (original → corrected)
 
 5. Manual refinement (volitelné)
@@ -151,7 +154,9 @@ piano-editor/
 | GET | `/bank/list?directory=...` | seznam JSON souborů v adresáři |
 | POST | `/bank/load` | načtení jednoho nebo více souborů |
 | POST | `/fit?bank_path=...` | spustit RelationFitter s anchor váhami |
-| POST | `/corrections/propose?bank_path=...` | navrhnout korekce z FitResult |
+| POST | `/corrections/propose?bank_path=...` | navrhnout fit-based korekce z FitResult |
+| POST | `/corrections/tension` | anchor IDW interpolace v parametrovém prostoru |
+| POST | `/corrections/pca` | anchor interpolace v PCA latentním prostoru |
 | POST | `/corrections/apply` | aplikovat korekce (undo checkpoint) |
 | POST | `/export` | exportovat opravenou banku |
 | GET | `/anchors/list` | seznam uložených anchor databází |
@@ -196,7 +201,9 @@ anchor_manager.py   ← models, logger
 relation_fitter.py  ← models, logger, (anchor_manager lazy)
     ↓
 outlier_detector.py ← models, logger, (fit result)
-correction_engine.py← models, logger, relation_fitter
+correction_engine.py← models, logger
+tension_manifold.py ← models, logger, numpy
+pca_manifold.py     ← models, logger, numpy
     ↓
 bank_exporter.py    ← models, logger
 midi_bridge.py      ← models, logger

@@ -136,6 +136,19 @@ export const correctionsApi = {
       tension, falloff, min_delta_pct: 1.0, max_delta_pct: 200.0,
     }),
 
+  pca: (bankPath: string, anchorDbName?: string, tension = 0.5, nComponents = 0.95) =>
+    post<CorrectionSet>('/corrections/pca', {
+      bank_path: bankPath, anchor_db_name: anchorDbName,
+      tension, n_components: nComponents, min_delta_pct: 1.0, max_delta_pct: 200.0,
+    }),
+
+  rbf: (bankPath: string, anchorDbName?: string, tension = 0.5,
+        kernel = 'thin_plate_spline', smoothing = 0.0) =>
+    post<CorrectionSet>('/corrections/rbf', {
+      bank_path: bankPath, anchor_db_name: anchorDbName,
+      tension, kernel, smoothing, min_delta_pct: 1.0, max_delta_pct: 200.0,
+    }),
+
   apply: (bankPath: string, correctionSet: CorrectionSet, selectedFields?: string[]) =>
     post<{ output_path: string; corrections_applied: number; notes_affected: number }>(
       '/corrections/apply',

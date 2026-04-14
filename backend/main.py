@@ -24,6 +24,8 @@ from bank_exporter import BankExporter
 from bank_loader import BankLoader, BankLoadError
 from correction_engine import CorrectionEngine
 from tension_manifold import propose_tension_corrections
+from pca_manifold import propose_pca_corrections
+from rbf_surface import propose_rbf_corrections
 from logger import app_log, get_logger
 from midi_bridge import MidiBridge, MidiConnectionError
 from models import (
@@ -380,6 +382,72 @@ async def propose_tension(request: TensionRequest):
             max_delta_pct=request.max_delta_pct,
         )
         log.info(f"tension corrections={len(cs.corrections)}")
+        return cs
+    except AnchorNotFoundError as e: raise _err(log, 404, str(e), e)
+    except BankLoadError as e: raise _err(log, 404, str(e), e)
+    except Exception as e: raise _err(log, 500, str(e), e)
+
+class PCARequest(BaseModel):
+    bank_path: str
+    anchor_db_name: Optional[str] = None
+    tension: float = 0.5
+    n_components: float = 0.95
+    min_delta_pct: float = 1.0
+    max_delta_pct: float = 200.0
+
+@app.post("/corrections/pca", response_model=CorrectionSet)
+async def propose_pca(request: PCARequest):
+    log = get_logger("main", method="propose_pca")
+    try:
+        bank = await _run_blocking(loader.load, request.bank_path)
+        db_name = request.anchor_db_name
+        if not db_name:
+            db_name = _app_config.get("last_anchor_db")
+        if not db_name:
+            raise _err(log, 400, "Není vybrána anchor DB")
+        anchor_db = await _run_blocking(mgr.load, db_name)
+        cs = await _run_blocking(
+            propose_pca_corrections, bank, anchor_db,
+            tension=request.tension,
+            n_components=request.n_components,
+            min_delta_pct=request.min_delta_pct,
+            max_delta_pct=request.max_delta_pct,
+        )
+        log.info(f"PCA corrections={len(cs.corrections)}")
+        return cs
+    except AnchorNotFoundError as e: raise _err(log, 404, str(e), e)
+    except BankLoadError as e: raise _err(log, 404, str(e), e)
+    except Exception as e: raise _err(log, 500, str(e), e)
+
+class RBFRequest(BaseModel):
+    bank_path: str
+    anchor_db_name: Optional[str] = None
+    tension: float = 0.5
+    kernel: str = "thin_plate_spline"
+    smoothing: float = 0.0
+    min_delta_pct: float = 1.0
+    max_delta_pct: float = 200.0
+
+@app.post("/corrections/rbf", response_model=CorrectionSet)
+async def propose_rbf(request: RBFRequest):
+    log = get_logger("main", method="propose_rbf")
+    try:
+        bank = await _run_blocking(loader.load, request.bank_path)
+        db_name = request.anchor_db_name
+        if not db_name:
+            db_name = _app_config.get("last_anchor_db")
+        if not db_name:
+            raise _err(log, 400, "Není vybrána anchor DB")
+        anchor_db = await _run_blocking(mgr.load, db_name)
+        cs = await _run_blocking(
+            propose_rbf_corrections, bank, anchor_db,
+            tension=request.tension,
+            kernel=request.kernel,
+            smoothing=request.smoothing,
+            min_delta_pct=request.min_delta_pct,
+            max_delta_pct=request.max_delta_pct,
+        )
+        log.info(f"RBF corrections={len(cs.corrections)}")
         return cs
     except AnchorNotFoundError as e: raise _err(log, 404, str(e), e)
     except BankLoadError as e: raise _err(log, 404, str(e), e)

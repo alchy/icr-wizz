@@ -203,8 +203,17 @@ def propose_tension_corrections(
                 if abs(orig_val) < 1e-15 and abs(target_val) < 1e-15:
                     continue
 
-                # Aplikuj tenzi
-                corrected = orig_val + tension * (target_val - orig_val)
+                # Aplikuj tenzi — log blend pro multiplikativní parametry
+                base = param_key.split("_k")[0]
+                LOG_BLEND = {"B", "rms_gain", "attack_tau", "A_noise",
+                             "A0", "tau1", "tau2"}
+                if base in LOG_BLEND and orig_val > 0 and target_val > 0:
+                    import math
+                    log_o = math.log(orig_val)
+                    log_t = math.log(target_val)
+                    corrected = math.exp(log_o + tension * (log_t - log_o))
+                else:
+                    corrected = orig_val + tension * (target_val - orig_val)
 
                 # Delta
                 denom = max(abs(orig_val), abs(target_val), 1e-15)

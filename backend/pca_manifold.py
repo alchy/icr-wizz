@@ -103,6 +103,8 @@ class PCACorrector:
         self._std: Optional[np.ndarray] = None
         self._components: Optional[np.ndarray] = None  # (n_comp, n_features)
         self._n_comp: int = 0
+        self._data_min: Optional[np.ndarray] = None
+        self._data_max: Optional[np.ndarray] = None
 
     def fit(self, bank: BankState, anchor_db: AnchorDatabase) -> dict:
         """
@@ -161,6 +163,10 @@ class PCACorrector:
 
             self._components = Vt[:self._n_comp]  # (n_comp, n_features)
 
+            # Rozsah anchor dat v log prostoru (pro clamp projekce)
+            self._data_min = X.min(axis=0) - self._std  # ± 1 std tolerance
+            self._data_max = X.max(axis=0) + self._std
+
             variance_kept = float(cumulative[self._n_comp - 1]) if self._n_comp <= len(cumulative) else 1.0
 
             op.set_output({
@@ -177,13 +183,18 @@ class PCACorrector:
             }
 
     def project(self, vec_log: np.ndarray) -> np.ndarray:
-        """Projektuj vektor na PCA manifold: encode → decode. Vstup i výstup v log prostoru."""
+        """Projektuj vektor na PCA manifold: encode → decode.
+        Vstup i výstup v log prostoru. Clamp na anchor rozsah."""
         if self._mean is None or self._components is None:
             return vec_log
         normalized = (vec_log - self._mean) / self._std
         encoded = normalized @ self._components.T  # (n_comp,)
         decoded = encoded @ self._components       # (n_features,)
-        return decoded * self._std + self._mean
+        result = decoded * self._std + self._mean
+        # Clamp na rozsah anchor dat (± 1 std pro toleranci)
+        if self._data_min is not None:
+            result = np.clip(result, self._data_min, self._data_max)
+        return result
 
     def propose(self, bank: BankState, anchor_db: AnchorDatabase) -> CorrectionSet:
         """
@@ -228,11 +239,19 @@ class PCACorrector:
                 # Generuj korekce per parametr
                 for i, key in enumerate(self.param_keys):
                     orig_val = orig_linear[i]
-                    # Zpětná transformace z log prostoru
-                    proj_val = _from_log(key, proj_log[i])
+                    base = key.split("_k")[0]
 
-                    # Tension blend (v lineárním prostoru)
-                    corrected = orig_val + self.tension * (proj_val - orig_val)
+                    if base in LOG_PARAMS and orig_val > 0:
+                        # Tension blend v LOG prostoru (geometrický průměr)
+                        # corrected = orig^(1-t) * projected^t
+                        log_o = orig_log[i]
+                        log_p = proj_log[i]
+                        log_c = log_o + self.tension * (log_p - log_o)
+                        corrected = float(np.exp(log_c))
+                    else:
+                        # Lineární blend pro non-log parametry (a1, beat_hz)
+                        proj_val = _from_log(key, proj_log[i])
+                        corrected = orig_val + self.tension * (proj_val - orig_val)
 
                     # Delta
                     denom = max(abs(orig_val), abs(proj_val), 1e-15)

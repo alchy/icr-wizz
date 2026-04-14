@@ -99,17 +99,19 @@ export const NoteDetail: React.FC = () => {
     if (!spectrumRef.current || notes.length === 0) return
     const kMax = Math.max(...notes.map(n => n.partials.length))
     const traces: Plotly.Data[] = notes.map(note => {
+      const isActive = note.vel === selectedVel
       const A0dB = note.partials.map(p =>
         20 * Math.log10(Math.max(p.A0 / (note.partials[0]?.A0 || 1), 1e-6))
       )
       return {
         type:  'bar',
-        name:  VEL_LABELS[note.vel],
+        name:  `${VEL_LABELS[note.vel]}${isActive ? ' ◄' : ''}`,
         x:     note.partials.map(p => p.k),
         y:     A0dB,
-        marker:{ color: velColor(note.vel, VEL_ALPHA[note.vel]) },
+        marker:{ color: velColor(note.vel, isActive ? 1.0 : VEL_ALPHA[note.vel] * 0.4),
+                 line: isActive ? { color: '#E8E6E0', width: 0.5 } : undefined },
         hovertemplate: `vel ${note.vel} k=%{x}: %{y:.1f} dB<extra></extra>`,
-        opacity: VEL_ALPHA[note.vel],
+        opacity: isActive ? 1.0 : VEL_ALPHA[note.vel] * 0.5,
       }
     })
 
@@ -175,7 +177,7 @@ export const NoteDetail: React.FC = () => {
       const k = data.points[0]?.x as number
       if (k) { setActiveK(k); selectPartial(k) }
     })
-  }, [notes, activeK, selectedMidi, selectPartial, corrMap])
+  }, [notes, activeK, selectedMidi, selectedVel, selectPartial, corrMap])
 
   // ---------------------------------------------------------------------------
   // Plot 2: Decay envelope
@@ -189,6 +191,7 @@ export const NoteDetail: React.FC = () => {
     notes.forEach(note => {
       const p = note.partials.find(pp => pp.k === activeK)
       if (!p) return
+      const isActive = note.vel === selectedVel
       const env = t.map(ti => {
         const A = p.A0 * (p.a1 * Math.exp(-ti / p.tau1) + (1 - p.a1) * Math.exp(-ti / p.tau2))
         return 20 * Math.log10(Math.max(A / p.A0, 1e-6))
@@ -196,9 +199,11 @@ export const NoteDetail: React.FC = () => {
       traces.push({
         type: 'scatter', mode: 'lines',
         x: t, y: env,
-        line: { color: velColor(note.vel, VEL_ALPHA[note.vel]), width: 1.2 },
-        name: VEL_LABELS[note.vel],
-        hovertemplate: '%{x:.2f}s: %{y:.1f} dB<extra></extra>',
+        line: { color: velColor(note.vel, isActive ? 1.0 : VEL_ALPHA[note.vel] * 0.4),
+                width: isActive ? 2.5 : 0.8 },
+        name: `${VEL_LABELS[note.vel]}${isActive ? ' ◄' : ''}`,
+        hovertemplate: `${VEL_LABELS[note.vel]} %{x:.2f}s: %{y:.1f} dB<extra></extra>`,
+        opacity: isActive ? 1.0 : 0.4,
       })
     })
 

@@ -68,17 +68,15 @@ export const FileSelector: React.FC = () => {
     setListError(''); setLoading(true)
     try {
       const items = await bankApi.list(directory.trim())
-      // Přidej exported banky
-      try {
-        const exported = await bankApi.list('exported')
-        const tagged = exported.map(e => ({
-          ...e,
-          filename: `[exported] ${e.filename}`,
-        }))
-        setListing([...items, ...tagged])
-      } catch {
-        setListing(items)
+      // Přidej extracts + exported banky
+      const extra: typeof items = []
+      for (const [dir, tag] of [['extracts', 'extract'], ['exported', 'exported']] as const) {
+        try {
+          const list = await bankApi.list(dir)
+          extra.push(...list.map(e => ({ ...e, filename: `[${tag}] ${e.filename}` })))
+        } catch { /* dir neexistuje */ }
       }
+      setListing([...items, ...extra])
     } catch (e: any) {
       setListError(e.message)
     } finally {

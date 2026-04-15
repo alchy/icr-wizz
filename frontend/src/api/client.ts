@@ -187,6 +187,45 @@ export const exportApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Extract API
+// ---------------------------------------------------------------------------
+
+export interface ExtractJob {
+  job_id: string
+  bank_dir: string
+  bank_name: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  step: number
+  step_total: number
+  step_label: string
+  elapsed_s: number
+  log_tail: string[]
+  output_paths: string[]
+  error: string | null
+}
+
+export const extractApi = {
+  start: (bankDir: string, srTag = 'f48', opts: {
+    workers?: number, skipEq?: boolean, skipIr?: boolean, skipPanCal?: boolean
+  } = {}) =>
+    post<{ started: boolean; job_id: string; pid?: number }>('/extract/start', {
+      bank_dir: bankDir, sr_tag: srTag,
+      workers: opts.workers ?? null,
+      skip_eq: opts.skipEq ?? false,
+      skip_ir: opts.skipIr ?? false,
+      skip_pan_cal: opts.skipPanCal ?? false,
+    }),
+
+  status: (jobId?: string) =>
+    get<{ jobs?: ExtractJob[] } & Partial<ExtractJob>>(
+      jobId ? `/extract/status?job_id=${encodeURIComponent(jobId)}` : '/extract/status'
+    ),
+
+  cancel: (jobId: string) =>
+    post<{ cancelled: boolean }>(`/extract/cancel?job_id=${encodeURIComponent(jobId)}`, {}),
+}
+
+// ---------------------------------------------------------------------------
 // Anchor API
 // ---------------------------------------------------------------------------
 

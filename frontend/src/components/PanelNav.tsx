@@ -25,6 +25,7 @@ export const PanelNav: React.FC = () => {
   const { active: anchorDb } = useAnchorStore()
 
   const items: NavItem[] = [
+    { id: 'extract',         label: 'Extract' },
     { id: 'relation',        label: 'Vztahy' },
     { id: 'note_detail',     label: 'Nota',  badge: () => null },
     { id: 'velocity_editor', label: 'Velocity' },

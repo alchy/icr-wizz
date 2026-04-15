@@ -11,6 +11,7 @@ import { VelocityEditor }  from './views/VelocityEditor'
 import { AnchorPanel }     from './views/AnchorPanel'
 import { DiffPreview }     from './views/DiffPreview'
 import { MidiPanel }       from './views/MidiPanel'
+import { ExtractPanel }    from './views/ExtractPanel'
 import { ParamSpaceView }  from './views/ParamSpaceView'
 import { ParamSpace3DView }from './views/ParamSpace3DView'
 import { PanelNav }        from './components/PanelNav'
@@ -36,6 +37,7 @@ export default function App() {
 
   function renderPanel() {
     switch (panelView) {
+      case 'extract':         return <ExtractPanel />
       case 'relation':        return <RelationView />
       case 'note_detail':     return <NoteDetail />
       case 'velocity_editor': return <VelocityEditor />

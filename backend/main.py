@@ -26,6 +26,7 @@ from correction_engine import CorrectionEngine
 from tension_manifold import propose_tension_corrections
 from pca_manifold import propose_pca_corrections
 from rbf_surface import propose_rbf_corrections
+from extract_runner import ExtractRunner
 from logger import app_log, get_logger
 from midi_bridge import MidiBridge, MidiConnectionError
 from models import (
@@ -112,6 +113,23 @@ engine   = CorrectionEngine(
 exporter = BankExporter()
 mgr      = AnchorManager(ANCHOR_DIR)
 bridge   = MidiBridge()
+
+# Extract runner — subprocess pro icr-engine extraction pipeline
+_extract_cfg = _app_config.get("extract", {})
+_icr_engine_dir = _extract_cfg.get(
+    "icr_engine_dir",
+    str(Path(__file__).resolve().parent.parent.parent / "icr-engine"),
+)
+_extract_venv = _extract_cfg.get(
+    "venv_python",
+    str(Path(_icr_engine_dir) / ".venv" / "bin" / "python"),
+)
+EXTRACTS_DIR = str(Path(__file__).resolve().parent / "extracts")
+extract_runner = ExtractRunner(
+    icr_engine_dir=_icr_engine_dir,
+    venv_python=_extract_venv,
+    extracts_dir=EXTRACTS_DIR,
+)
 
 # ---------------------------------------------------------------------------
 # Request / Response modely
@@ -596,6 +614,45 @@ async def suggest_anchors(name: str, bank_path: str, n: int = 15):
         return {"suggestions": suggestions}
     except BankLoadError as e: raise _err(log, 404, str(e), e)
     except Exception as e:     raise _err(log, 500, str(e), e)
+
+# ---------------------------------------------------------------------------
+# Extract endpoints
+# ---------------------------------------------------------------------------
+class ExtractRequest(BaseModel):
+    bank_dir: str
+    sr_tag: str = "f48"
+    workers: Optional[int] = None
+    skip_eq: bool = False
+    skip_ir: bool = False
+    skip_pan_cal: bool = False
+
+@app.post("/extract/start")
+async def extract_start(request: ExtractRequest):
+    log = get_logger("main", method="extract_start")
+    log.info(f"Extract start: bank_dir={request.bank_dir} sr_tag={request.sr_tag}")
+    result = await _run_blocking(
+        extract_runner.start,
+        bank_dir=request.bank_dir,
+        sr_tag=request.sr_tag,
+        workers=request.workers,
+        skip_eq=request.skip_eq,
+        skip_ir=request.skip_ir,
+        skip_pan_cal=request.skip_pan_cal,
+    )
+    if not result.get("started"):
+        raise _err(log, 409, result.get("reason", "start failed"))
+    return result
+
+@app.get("/extract/status")
+async def extract_status(job_id: Optional[str] = None):
+    return extract_runner.status(job_id)
+
+@app.post("/extract/cancel")
+async def extract_cancel(job_id: str):
+    log = get_logger("main", method="extract_cancel")
+    result = extract_runner.cancel(job_id)
+    log.info(f"Extract cancel: {result}")
+    return result
 
 # ---------------------------------------------------------------------------
 # MIDI endpoints

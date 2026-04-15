@@ -245,6 +245,7 @@ export interface WsResponse {
 // ---------------------------------------------------------------------------
 
 export type PanelView =
+  | 'extract'
   | 'relation'
   | 'note_detail'
   | 'velocity_editor'

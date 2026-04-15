@@ -50,8 +50,17 @@ def log(msg: str):
         log_fh.flush()
 
 
+def _check_port(port: int) -> bool:
+    """True pokud port je volný."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
 def start_backend():
     global backend_proc
+    if not _check_port(8000):
+        log("⚠ WARNING: port 8000 je obsazen — backend se nemusí spustit!")
     log("starting backend …")
     backend_proc = subprocess.Popen(
         [
@@ -71,6 +80,8 @@ def start_backend():
 
 def start_frontend():
     global frontend_proc
+    if not _check_port(5173):
+        log("⚠ WARNING: port 5173 je obsazen — frontend se nemusí spustit!")
     log("starting frontend …")
     frontend_proc = subprocess.Popen(
         ["npm", "run", "dev"],
@@ -214,6 +225,11 @@ def main():
     start_icr()
     start_backend()
     start_frontend()
+
+    log("")
+    log("  Backend API:  http://127.0.0.1:8000")
+    log("  Frontend UI:  http://localhost:5173")
+    log("")
 
     # Čekat — pokud proces spadne, restartovat
     while not shutting_down:

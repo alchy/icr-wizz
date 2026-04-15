@@ -87,10 +87,14 @@ def _build_param_keys(k_max: int) -> list[str]:
 class RBFCorrector:
     """RBF surface korekce — fituje hladké plochy přes anchor body."""
 
+    # Kernely které nepotřebují epsilon
+    _EPSILON_FREE = {"cubic", "linear", "thin_plate_spline", "quintic"}
+
     def __init__(
         self,
         kernel: str = "thin_plate_spline",
         smoothing: float = 0.0,
+        epsilon: Optional[float] = None,
         tension: float = 0.5,
         min_delta_pct: float = 1.0,
         max_delta_pct: float = 200.0,
@@ -98,6 +102,7 @@ class RBFCorrector:
     ):
         self.kernel = kernel
         self.smoothing = smoothing
+        self.epsilon = epsilon
         self.tension = tension
         self.min_delta_pct = min_delta_pct
         self.max_delta_pct = max_delta_pct
@@ -151,11 +156,11 @@ class RBFCorrector:
             n_anchors, n_features = Y.shape
             op.progress("matice", anchors=n_anchors, features=n_features)
 
-            self._rbf = RBFInterpolator(
-                X, Y,
-                kernel=self.kernel,
-                smoothing=self.smoothing,
-            )
+            rbf_kwargs = dict(kernel=self.kernel, smoothing=self.smoothing)
+            if self.kernel not in self._EPSILON_FREE:
+                eps = self.epsilon if self.epsilon is not None else 1.0
+                rbf_kwargs["epsilon"] = eps
+            self._rbf = RBFInterpolator(X, Y, **rbf_kwargs)
 
             op.set_output({
                 "fitted": True,
@@ -289,6 +294,7 @@ def propose_rbf_corrections(
     tension: float = 0.5,
     kernel: str = "thin_plate_spline",
     smoothing: float = 0.0,
+    epsilon: Optional[float] = None,
     min_delta_pct: float = 1.0,
     max_delta_pct: float = 200.0,
     k_max: int = 30,
@@ -297,6 +303,7 @@ def propose_rbf_corrections(
     rbf = RBFCorrector(
         kernel=kernel,
         smoothing=smoothing,
+        epsilon=epsilon,
         tension=tension,
         min_delta_pct=min_delta_pct,
         max_delta_pct=max_delta_pct,

@@ -104,6 +104,10 @@ export const DiffPreview: React.FC = () => {
   const activeAnchor = useAnchorStore(s => s.active)
   const [tensionVal, setTensionVal] = useState(0.5)
   const [rbfKernel, setRbfKernel] = useState('thin_plate_spline')
+  const EPSILON_FREE = new Set(['cubic', 'linear', 'thin_plate_spline', 'quintic'])
+  const needsEpsilon = !EPSILON_FREE.has(rbfKernel)
+  // slider 0.1–1.0 → epsilon 0.5–5.0
+  const sliderToEpsilon = (v: number) => 0.5 + (v - 0.1) * (4.5 / 0.9)
 
   async function handlePropose() {
     if (!activePath || !summary) return
@@ -162,10 +166,12 @@ export const DiffPreview: React.FC = () => {
   async function handleRBF() {
     if (!activePath) return
     setApplying(true)
-    setStatus(`RBF ${rbfKernel} (${tensionVal})…`)
+    const epsilon = needsEpsilon ? sliderToEpsilon(tensionVal) : undefined
+    const tension = needsEpsilon ? 0.5 : tensionVal
+    setStatus(`RBF ${rbfKernel} (${needsEpsilon ? 'ε=' + epsilon!.toFixed(1) : 't=' + tensionVal})…`)
     try {
       const cs = await correctionsApi.rbf(
-        activePath, activeAnchor?.name, tensionVal, rbfKernel)
+        activePath, activeAnchor?.name, tension, rbfKernel, 0.0, epsilon)
       useCorrectionStore.setState({
         pending: cs,
         selected: new Set(cs.corrections.map(
@@ -216,11 +222,11 @@ export const DiffPreview: React.FC = () => {
           </select>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', fontSize: 11 }}>
-          <span className="label">tension</span>
+          <span className="label">{needsEpsilon ? 'epsilon' : 'tension'}</span>
           <input type="range" className="slider" style={{ width: 120 }}
                  min={0.1} max={1.0} step={0.1} value={tensionVal}
                  onChange={e => setTensionVal(Number(e.target.value))} />
-          <span className="mono">{tensionVal.toFixed(1)}</span>
+          <span className="mono">{needsEpsilon ? sliderToEpsilon(tensionVal).toFixed(1) : tensionVal.toFixed(1)}</span>
         </div>
       </div>
     )
@@ -329,11 +335,11 @@ export const DiffPreview: React.FC = () => {
         </div>
         <div ref={histRef} style={{ flex: 1, minWidth: 0 }} />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-2)', flexShrink: 0, alignItems: 'center' }}>
-          <span className="label">tension</span>
+          <span className="label">{needsEpsilon ? 'ε' : 'tension'}</span>
           <input type="range" className="slider" style={{ width: 80 }}
                  min={0.1} max={1.0} step={0.1} value={tensionVal}
                  onChange={e => setTensionVal(Number(e.target.value))} />
-          <span className="mono" style={{ fontSize: 10 }}>{tensionVal.toFixed(1)}</span>
+          <span className="mono" style={{ fontSize: 10 }}>{needsEpsilon ? sliderToEpsilon(tensionVal).toFixed(1) : tensionVal.toFixed(1)}</span>
           <button className="btn" onClick={handleTension}
                   disabled={!activePath || !activeAnchor || applying}
                   style={{ background: 'var(--c-bass)', color: '#fff' }}>

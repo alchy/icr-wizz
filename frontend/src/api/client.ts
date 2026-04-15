@@ -143,10 +143,11 @@ export const correctionsApi = {
     }),
 
   rbf: (bankPath: string, anchorDbName?: string, tension = 0.5,
-        kernel = 'thin_plate_spline', smoothing = 0.0) =>
+        kernel = 'thin_plate_spline', smoothing = 0.0, epsilon?: number) =>
     post<CorrectionSet>('/corrections/rbf', {
       bank_path: bankPath, anchor_db_name: anchorDbName,
-      tension, kernel, smoothing, min_delta_pct: 1.0, max_delta_pct: 200.0,
+      tension, kernel, smoothing, epsilon: epsilon ?? null,
+      min_delta_pct: 1.0, max_delta_pct: 200.0,
     }),
 
   apply: (bankPath: string, correctionSet: CorrectionSet, selectedFields?: string[]) =>

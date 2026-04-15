@@ -443,6 +443,7 @@ class RBFRequest(BaseModel):
     tension: float = 0.5
     kernel: str = "thin_plate_spline"
     smoothing: float = 0.0
+    epsilon: Optional[float] = None
     min_delta_pct: float = 1.0
     max_delta_pct: float = 200.0
 
@@ -462,6 +463,7 @@ async def propose_rbf(request: RBFRequest):
             tension=request.tension,
             kernel=request.kernel,
             smoothing=request.smoothing,
+            epsilon=request.epsilon,
             min_delta_pct=request.min_delta_pct,
             max_delta_pct=request.max_delta_pct,
         )

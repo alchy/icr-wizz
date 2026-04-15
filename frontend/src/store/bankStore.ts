@@ -27,6 +27,7 @@ interface BankStore {
   activeState:   () => BankStateResponse | null
   activePath:    () => string | null
 
+  loadBank:      (path: string) => Promise<void>
   fetchNote:     (noteKey: string) => Promise<NoteParams | null>
   getCachedNote: (noteKey: string) => NoteParams | null
   clearNoteCache:() => void
@@ -65,6 +66,16 @@ export const useBankStore = create<BankStore>((set, get) => ({
       )
       return { tabs, activeTabPath: active, noteCache }
     })
+  },
+
+  loadBank: async (path) => {
+    const resp = await bankApi.load([path])
+    const newTabs = resp.loaded.map((p: string) => ({
+      path: p,
+      state: resp.states[p],
+    }))
+    get().addTabs(newTabs)
+    if (newTabs[0]) set({ activeTabPath: newTabs[0].path })
   },
 
   activeState: () => {
